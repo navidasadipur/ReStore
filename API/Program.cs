@@ -1,4 +1,6 @@
 using API.Data;
+using API.Middleware;
+
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,10 +36,12 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Problem migrating data");
     }
 }
+
+app.UseMiddleware<ExceptionMiddleware>();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseDeveloperExceptionPage();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
