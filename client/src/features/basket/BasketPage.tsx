@@ -16,7 +16,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { useAppDispatch, useAppSelector } from "../../app/store/configureStore";
-import { addBasketItemAsync, removeBasketItemAsync } from "./basketSlice";
+import { addBasketItemAsync, removeBasketItemAsync } from "./BasketSlice";
 import BasketSummary from "./BasketSummary";
 
 export default function BasketPage() {
