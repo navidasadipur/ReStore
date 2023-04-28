@@ -14,7 +14,7 @@ import { Link } from "react-router-dom";
 import { Product } from "../../app/models/product";
 import { useAppDispatch, useAppSelector } from "../../app/store/configureStore";
 import { currencyFormat } from "../../app/util/util";
-import { addBasketItemAsync } from "../basket/BasketSlice";
+import { addBasketItemAsync } from "../basket/basketSlice";
 
 interface Props {
   product: Product;
@@ -56,7 +56,7 @@ export default function ProductCard({ product }: Props) {
       </CardContent>
       <CardActions>
         <LoadingButton
-          loading={status.includes('pendingAddItem' + product.id)}
+          loading={status == 'pendingAddItem' + product.id}
           onClick={() => dispatch(addBasketItemAsync({productId: product.id}))}
           size="small"
         >

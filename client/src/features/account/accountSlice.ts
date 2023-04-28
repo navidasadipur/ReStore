@@ -4,7 +4,7 @@ import { FieldValues } from "react-hook-form";
 import agent from "../../app/api/agent";
 import { json } from "stream/consumers";
 import { toast } from "react-toastify";
-import { setBasket } from "../basket/BasketSlice";
+import { setBasket } from "../basket/basketSlice";
 
 interface AccountState {
     user: User | null;

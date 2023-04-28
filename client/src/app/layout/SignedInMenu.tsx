@@ -3,7 +3,7 @@ import React from "react";
 import { useAppDispatch, useAppSelector } from "../store/configureStore";
 import { signOut } from "../../features/account/accountSlice";
 import { useNavigate } from "react-router-dom";
-import { clearBasket } from "../../features/basket/BasketSlice";
+import { clearBasket } from "../../features/basket/basketSlice";
 
 export default function SignedInMenu() {
     const navigate = useNavigate();
