@@ -8,20 +8,21 @@ https://www.udemy.com/course/learn-to-build-an-e-commerce-store-with-dotnet-reac
 learning from Restore Udemy Course repository from link author repository course: https://github.com/TryCatchLearn/Restore
 
 
-using: 
 
-API:
+API using:
 
   .NET 7.0 SDK
   
   
-client:
+client using:
 
   npm
   
   node
   
   react
+	
+	
   
   
 from reference github project: 
