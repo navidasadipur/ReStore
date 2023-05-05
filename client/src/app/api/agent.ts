@@ -2,6 +2,7 @@ import axios, { AxiosError, AxiosResponse } from "axios";
 import { toast } from 'react-toastify';
 import { PaginatedResponse } from "../models/pagination";
 import { store } from "../store/configureStore";
+import { router } from "../router/Routes";
 
 const sleep = () => new Promise(resolve => setTimeout(resolve, 500))
 
@@ -44,7 +45,7 @@ axios.interceptors.response.use(async response => {
             toast.error(data.title);
             break;
         case 500:
-            toast.error(data.title);
+            router.navigate('/server-error', {state: {error: data}});
             break;
         default:
             break;
@@ -84,13 +85,21 @@ const Account = {
     login: (values: any) => requests.post('account/login', values),
     register: (values: any) => requests.post('account/register', values),
     currentUser: () => requests.get('account/currentUser'),
+    fetchAddress: () => requests.get('account/savedAddress')
+}
+
+const Orders = {
+    list: () => requests.get('orders'),
+    fetch: (id: number) => requests.get(`orders/${id}`),
+    create: (values: any) => requests.post('orders', values)
 }
 
 const agent = {
     Catalog,
     TestErrors,
     Basket,
-    Account
+    Account,
+    Orders
 }
 
 export default agent;
