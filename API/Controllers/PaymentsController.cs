@@ -32,10 +32,8 @@ namespace API.Controllers
 
             if (intent == null) return BadRequest(new ProblemDetails { Title = "Problem creating payment intent" });
 
-
-
-            basket.PaymentIntentId = basket.PaymentIntentId ?? intent.Id;
-            basket.ClientSecret = basket.ClientSecret ?? intent.ClientSecret;
+            basket.PaymentIntentId = string.IsNullOrWhiteSpace(basket.PaymentIntentId) ? intent.Id : basket.PaymentIntentId ;
+            basket.ClientSecret = string.IsNullOrWhiteSpace(basket.ClientSecret) ? intent.ClientSecret : basket.ClientSecret;
 
             _context.Update(basket);
 
