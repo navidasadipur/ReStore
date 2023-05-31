@@ -31,7 +31,9 @@ namespace API.Services
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWTSettings:TokenKey"]));
+            ///TO DO: GET FROM APPSETTING
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this is a secrete key and needs to be at least 12 characters"));
+            // var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JWTSettings:TokenKey"]));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
             var tokenOptions = new JwtSecurityToken(

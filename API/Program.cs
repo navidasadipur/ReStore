@@ -47,7 +47,9 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddDbContext<StoreContext>(opt =>
 {
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    ///TO DO: GET CONNECTION STRING FROM APPSETTING
+    opt.UseSqlServer("Data Source=185.2.14.61\\MSSQLSERVER2019;Initial Catalog=RestoreDB;Integrated Security=false;TrustServerCertificate=True;User ID=RestoreDBUser;Password=Tmi$tmir1mil;");
+    // opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
 builder.Services.AddCors();
@@ -68,8 +70,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
+            ///TO DO: GET FROM APPSETTING
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8
-                .GetBytes(builder.Configuration["JWTSettings:TokenKey"]))
+                .GetBytes("this is a secrete key and needs to be at least 12 characters"))
+                // .GetBytes(builder.Configuration["JWTSettings:TokenKey"])
         };
     });
 
@@ -87,6 +91,7 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<StoreContext>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
     try
     {
         await context.Database.MigrateAsync();
