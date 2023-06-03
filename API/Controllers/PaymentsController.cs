@@ -53,10 +53,8 @@ namespace API.Controllers
         {
             var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
 
-            ///TO DO: GET FROM APPSETTING
             var stripeEvent = EventUtility.ConstructEvent(json, Request.Headers["Stripe-Signature"],
                 _config["StripeSettings:WhSecret"]);
-                // _config["StripeSettings:WhSecret"]);
 
             var charge = (Charge)stripeEvent.Data.Object;
 
