@@ -22,11 +22,11 @@ namespace API.Controllers
             _imageService = imageService;
             _mapper = mapper;
             _context = context;
-            
+
         }
 
         [HttpGet]
-        public async Task<ActionResult<PagedList<Product>>> GetProducts([FromQuery]ProductParams productParams)
+        public async Task<ActionResult<PagedList<Product>>> GetProducts([FromQuery] ProductParams productParams)
         {
             var query = _context.Products
                 .Sort(productParams.OrderBy)
@@ -34,15 +34,15 @@ namespace API.Controllers
                 .Filter(productParams.Brands, productParams.Types)
                 .AsQueryable();
 
-            var products = await PagedList<Product>.ToPagedList(query, 
+            var products = await PagedList<Product>.ToPagedList(query,
                 productParams.PageNumber, productParams.PageSize);
 
             Response.AddPaginationHeader(products.MetaData);
 
             return products;
-        } 
+        }
 
-        [HttpGet("{id}", Name="GetProduct")]
+        [HttpGet("{id}", Name = "GetProduct")]
         public async Task<ActionResult<Product>> GetProduct(int id)
         {
             var product = await _context.Products.FindAsync(id);
@@ -58,12 +58,12 @@ namespace API.Controllers
             var brands = await _context.Products.Select(p => p.Brand).Distinct().ToListAsync();
             var types = await _context.Products.Select(p => p.Type).Distinct().ToListAsync();
 
-            return Ok(new {brands, types});
+            return Ok(new { brands, types });
         }
 
         [Authorize(Roles = "Admin")]
         [HttpPost]
-        public async Task<ActionResult<Product>> CreateProduct([FromForm]CreateProductDto productDto)
+        public async Task<ActionResult<Product>> CreateProduct([FromForm] CreateProductDto productDto)
         {
             var product = _mapper.Map<Product>(productDto);
 
@@ -71,8 +71,8 @@ namespace API.Controllers
             {
                 var imageResult = await _imageService.AddImageAsync(productDto.File);
 
-                if (imageResult.Error != null) 
-                    return BadRequest(new ProblemDetails{Title = imageResult.Error.Message});
+                if (imageResult.Error != null)
+                    return BadRequest(new ProblemDetails { Title = imageResult.Error.Message });
 
                 product.PictureUrl = imageResult.SecureUrl.ToString();
                 product.publicId = imageResult.PublicId;
@@ -82,26 +82,40 @@ namespace API.Controllers
 
             var result = await _context.SaveChangesAsync() > 0;
 
-            if (result) return CreatedAtRoute("GetProduct", new {Id = product.Id}, product);
+            if (result) return CreatedAtRoute("GetProduct", new { Id = product.Id }, product);
 
-            return BadRequest(new ProblemDetails {Title = "Problem creating new product"});
+            return BadRequest(new ProblemDetails { Title = "Problem creating new product" });
         }
 
-        [Authorize(Roles="Admin")]
+        [Authorize(Roles = "Admin")]
         [HttpPut]
-        public async Task<ActionResult> UpdateProduct(UpdateProductDto productDto)
+        public async Task<ActionResult<Product>> UpdateProduct([FromForm]UpdateProductDto productDto)
         {
-              var product = await _context.Products.FindAsync(productDto.Id);
+            var product = await _context.Products.FindAsync(productDto.Id);
 
-              if (product == null) return NotFound();
+            if (product == null) return NotFound();
 
-              _mapper.Map(productDto, product);
+            _mapper.Map(productDto, product);
 
-              var result = await _context.SaveChangesAsync() > 0;
+            if (productDto.File != null)
+            {
+                var imageResult = await _imageService.AddImageAsync(productDto.File);
 
-              if (result) return NoContent();
+                if (imageResult.Error != null)
+                    return BadRequest(new ProblemDetails { Title = imageResult.Error.Message });
 
-              return BadRequest(new ProblemDetails{Title = "Problem updating product"});
+                if (!string.IsNullOrEmpty(product.publicId))
+                    await _imageService.DeleteImageAsync(product.publicId);
+
+                product.PictureUrl = imageResult.SecureUrl.ToString();
+                product.publicId = imageResult.PublicId;
+            }
+
+            var result = await _context.SaveChangesAsync() > 0;
+
+            if (result) return Ok(product);
+
+            return BadRequest(new ProblemDetails { Title = "Problem updating product" });
         }
 
         [Authorize(Roles = "Admin")]
@@ -112,13 +126,16 @@ namespace API.Controllers
 
             if (product == null) return NotFound();
 
+            if (!string.IsNullOrEmpty(product.publicId))
+                await _imageService.DeleteImageAsync(product.publicId);
+
             _context.Products.Remove(product);
 
             var result = await _context.SaveChangesAsync() > 0;
 
             if (result) return Ok();
 
-            return BadRequest(new ProblemDetails{Title = "Problem deleting product"});
+            return BadRequest(new ProblemDetails { Title = "Problem deleting product" });
         }
     }
 }
