@@ -1,7 +1,8 @@
 # ReStore
 e-commerce store with dot net and React Redux
 
-#Restore.navidasadipur.ir
+https://Restore.navidasadipur.ir
+
 View a demo of this app here.
 
 ""tell me i forget teach me i remember involve me i learn""
