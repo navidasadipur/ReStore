@@ -3,6 +3,12 @@ e-commerce store with dot net and React Redux
 
 https://Restore.navidasadipur.ir
 
+username: alice
+Password: Pa$$w0rd
+
+username: admin
+Password: Pa$$w0rd
+
 View a demo of this app here.
 
 ""tell me i forget teach me i remember involve me i learn""
