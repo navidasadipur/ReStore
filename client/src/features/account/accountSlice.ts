@@ -59,7 +59,9 @@ export const accountSlice = createSlice({
             localStorage.removeItem('user');
         },
         setUser: (state, action) => {
-            state.user = action.payload;
+            let cliams = JSON.parse(atob(action.payload.token.split('.')[1]));
+            let roles = cliams['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
+            state.user = {...action.payload, roles: typeof(roles) === 'string' ? [roles] : roles}
         }
     },
     extraReducers: (builder => {
@@ -69,7 +71,9 @@ export const accountSlice = createSlice({
             toast.error('Session expired - please login again');
         });
         builder.addMatcher(isAnyOf(signInUser.fulfilled, fetchCurrentUser.fulfilled), (state, action) => {
-            state.user = action.payload
+            let cliams = JSON.parse(atob(action.payload.token.split('.')[1]));
+            let roles = cliams['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
+            state.user = {...action.payload, roles: typeof(roles) === 'string' ? [roles] : roles}
         });
         builder.addMatcher(isAnyOf(signInUser.rejected), (state, action) => {
             throw action.payload;
