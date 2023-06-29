@@ -1,48 +1,57 @@
 # ReStore
 e-commerce store with dot net and React Redux
 
-https://Restore.navidasadipur.ir
+View a demo of this app here:
 
-username: alice
-Password: Pa$$w0rd
+<a href="https://Restore.navidasadipur.ir">https://Restore.navidasadipur.ir</a>
 
-username: admin
-Password: Pa$$w0rd
+<table>
+<tr>
+    <td colspan="2">test username and password</td>
+  </tr>
+  <tr>
+    <th>username</th>
+    <th>password</th>
+  </tr>
+  <tr>
+    <td>admin</td>
+    <td>Pa$$w0rd</td>
+  </tr>
+  <tr>
+    <td>alice</td>
+    <td>Pa$$w0rd</td>
+  </tr>
+</table>
 
-View a demo of this app here.
-
-""tell me i forget teach me i remember involve me i learn""
-
-https://www.udemy.com/course/learn-to-build-an-e-commerce-store-with-dotnet-react-redux/
-
-learning from Restore Udemy Course repository from link author repository course: https://github.com/TryCatchLearn/Restore
 
 
 
 API using:
 
-  .NET 7.0 SDK
-  
-  
-client using:
+<ul>
+<li>.net 7</li>
 
-  npm
+<li>ASPNET Core Identity(JWT type)</li>
+</ul>
+
+  <br />
+frontend using:
+<ul>
+
+<li>react + typescript</li>
+
+<li>Redux</li>
+
+<li>Material UI</li>
   
-  node
+<li>axios</li>
   
-  react
+<li>React-Router</li>
+
+<li>react-toastify</li>
 	
-	
-  
-  
-from reference github project: 
-
-This is the updated repository for the .Net 7.0, React 18 and React Router 6 version of the course refreshed as at February 2023
+<li>react-hook-form + Yup</li>
 
 
 
-
-
-
-
-
+I am learning from Neil Cummings in the course <a href="https://www.udemy.com/course/learn-to-build-an-e-commerce-store-with-dotnet-react-redux/">learn to build an e-commerce store with dotnet react redux</a>
