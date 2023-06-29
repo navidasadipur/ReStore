@@ -51,7 +51,7 @@ frontend using:
 <li>react-toastify</li>
 	
 <li>react-hook-form + Yup</li>
-
+</ul>
 
 
 I am learning from Neil Cummings in the course <a href="https://www.udemy.com/course/learn-to-build-an-e-commerce-store-with-dotnet-react-redux/">learn to build an e-commerce store with dotnet react redux</a>
