@@ -30,26 +30,19 @@ API using:
 
 <ul>
 <li>.net 7</li>
-
 <li>ASPNET Core Identity(JWT type)</li>
+<li>AutoMapper</li>
 </ul>
 
   <br />
 frontend using:
 <ul>
-
 <li>react + typescript</li>
-
 <li>Redux</li>
-
 <li>Material UI</li>
-  
 <li>axios</li>
-  
 <li>React-Router</li>
-
 <li>react-toastify</li>
-	
 <li>react-hook-form + Yup</li>
 </ul>
 
