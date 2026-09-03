@@ -38,7 +38,9 @@ namespace API.Services
                 issuer: null,
                 audience: null,
                 claims: claims,
-                expires: DateTime.Now.AddDays(7),
+                // UTC, not local: the "exp" claim is always interpreted as UTC,
+                // so DateTime.Now shifts the real lifetime by the server's offset.
+                expires: DateTime.UtcNow.AddDays(7),
                 signingCredentials: creds
             );
 

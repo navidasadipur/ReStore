@@ -27,14 +27,21 @@ namespace API.Middleware
             catch (Exception ex)
             {
                 _logger.LogError(ex, ex.Message);
+
+                // If the response has already started there is nothing we can
+                // change — writing here would throw and mask the real error.
+                if (context.Response.HasStarted) throw;
+
                 context.Response.ContentType = "application/json";
                 context.Response.StatusCode = 500;
 
+                // Exception messages can carry connection strings, SQL and file
+                // paths, so only expose them outside of production.
                 var response = new ProblemDetails
                 {
                     Status = 500,
                     Detail = _env.IsDevelopment() ? ex.StackTrace?.ToString() : null,
-                    Title = ex.Message
+                    Title = _env.IsDevelopment() ? ex.Message : "Internal server error"
                 };
 
                 var options = new JsonSerializerOptions

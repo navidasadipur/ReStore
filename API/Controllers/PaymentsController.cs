@@ -56,12 +56,22 @@ namespace API.Controllers
             var stripeEvent = EventUtility.ConstructEvent(json, Request.Headers["Stripe-Signature"],
                 _config["StripeSettings:WhSecret"]);
 
-            var charge = (Charge)stripeEvent.Data.Object;
+            // Stripe sends every event type subscribed to on this endpoint, so a
+            // hard cast would throw on anything that is not a charge.
+            if (stripeEvent.Data.Object is not Charge charge) return new EmptyResult();
 
-            var order = await _context.Orders.FirstOrDefaultAsync(x => 
+            var order = await _context.Orders.FirstOrDefaultAsync(x =>
                 x.PaymentIntentId == charge.PaymentIntentId);
 
+            // No matching order: acknowledge anyway. Returning an error here
+            // makes Stripe retry the delivery indefinitely.
+            if (order == null) return new EmptyResult();
+
+            // Only act on terminal states — a charge can also be "pending",
+            // which says nothing about the outcome yet.
             if (charge.Status == "succeeded") order.OrderStatus = OrderStatus.PaymentReceived;
+            else if (charge.Status == "failed") order.OrderStatus = OrderStatus.PaymentFailed;
+            else return new EmptyResult();
 
             await _context.SaveChangesAsync();
 

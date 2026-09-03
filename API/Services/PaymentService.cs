@@ -19,7 +19,7 @@ namespace API.Services
 
             var service = new PaymentIntentService();
 
-            var intent = new PaymentIntent();
+            PaymentIntent intent;
             var subtotal = basket.Items.Sum(item => item.Quantity * item.Product.Price);
             var deliveryFee = subtotal > 10000 ? 0 : 500;
 
@@ -39,7 +39,7 @@ namespace API.Services
                 {
                     Amount = subtotal + deliveryFee
                 };
-                await service.UpdateAsync(basket.PaymentIntentId, options);
+                intent = await service.UpdateAsync(basket.PaymentIntentId, options);
             }
 
             return intent;

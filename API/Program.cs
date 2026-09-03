@@ -61,8 +61,14 @@ builder.Services.AddIdentityCore<User>(opt =>
     .AddRoles<Role>()
     .AddEntityFrameworkStores<StoreContext>();
 
+// Fail loudly at startup rather than with a NullReferenceException on the
+// first request. In production this comes from JWTSettings__TokenKey.
+var tokenKey = builder.Configuration["JWTSettings:TokenKey"]
+    ?? throw new InvalidOperationException(
+        "JWTSettings:TokenKey is not configured (set the JWTSettings__TokenKey environment variable).");
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(opt => 
+    .AddJwtBearer(opt =>
     {
         opt.TokenValidationParameters = new TokenValidationParameters
         {
@@ -70,8 +76,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8
-                .GetBytes(builder.Configuration["JWTSettings:TokenKey"]))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(tokenKey))
         };
     });
 

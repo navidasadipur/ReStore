@@ -53,7 +53,21 @@ namespace API.Controllers
             foreach (var item in basket.Items)
             {
                 var productItem = await _context.Products.FindAsync(item.ProductId);
-                var itemOrdered = new ProductItemOrdered 
+
+                // The product may have been deleted after it went in the basket.
+                if (productItem == null)
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "A product in your basket is no longer available"
+                    });
+
+                if (productItem.QuantityInStock < item.Quantity)
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = $"Not enough {productItem.Name} in stock"
+                    });
+
+                var itemOrdered = new ProductItemOrdered
                 {
                     ProductId = productItem.Id,
                     Name = productItem.Name,

@@ -9,8 +9,10 @@ namespace API.Extensions
         {
             var options = new JsonSerializerOptions{PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
 
-            response.Headers.Add("Pagination", JsonSerializer.Serialize(metaData, options));
-            response.Headers.Add("Access-Control-Expose-Headers", "Pagination");
+            // Assign rather than Add: Add throws if the header is already present,
+            // which the CORS middleware can do for Access-Control-Expose-Headers.
+            response.Headers["Pagination"] = JsonSerializer.Serialize(metaData, options);
+            response.Headers["Access-Control-Expose-Headers"] = "Pagination";
         }
     }
 }
