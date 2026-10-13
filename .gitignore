@@ -475,4 +475,8 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
-API/appsettings.json
+
+# Environment files holding real secrets. deploy/.env.example is the template
+# and IS tracked; the filled-in .env never is.
+.env
+deploy/.env

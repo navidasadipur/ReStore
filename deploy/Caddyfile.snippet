@@ -1,0 +1,13 @@
+# Add this block to /opt/personal-site/Caddyfile
+#
+#   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Caddy reaches the app by container name over the shared restore-net network.
+# Both names are needed so that https://restore.navidasadipur.ir and
+# https://www.restore.navidasadipur.ir both work - and both must already
+# resolve to the server in DNS, or Caddy's certificate request fails.
+
+restore.navidasadipur.ir, www.restore.navidasadipur.ir {
+    encode zstd gzip
+    reverse_proxy restore-app:8080
+}
