@@ -1,0 +1,81 @@
+# Production stack for the ReStore server.
+#
+# Lives at /opt/restore/compose.yml together with its .env file:
+#
+#   cd /opt/restore
+#   docker compose up -d          # first run
+#   docker compose up -d app      # redeploy the app only (db is untouched)
+#
+# The database is a service in this project so that it shares the project's
+# network and .env, but it has its own named volume and is never recreated by
+# an app redeploy - `docker compose up -d app` only touches the app.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: restore-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-restoreuser}
+      POSTGRES_DB: ${POSTGRES_DB:-restore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - put it in /opt/restore/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-restoreuser} -d ${POSTGRES_DB:-restore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # No `ports:`. Postgres is reached by container name over restore-net.
+    # Publishing 5432 would put the database on the public internet.
+    logging:
+      driver: local
+
+  app:
+    image: ${RESTORE_IMAGE:?RESTORE_IMAGE is required, e.g. ghcr.io/navidasadipur/restore}:${RESTORE_TAG:-latest}
+    container_name: restore-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Wait for Postgres to actually accept connections: the API runs EF
+        # migrations at startup and swallows migration failures.
+        condition: service_healthy
+    # No `ports:` either. Caddy (running in the /opt/personal-site project)
+    # joins restore-net and reaches this container at restore-app:8080.
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      # Caddy terminates TLS, so honour X-Forwarded-Proto/For.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # ASP.NET Core maps "__" in an env var name onto the ":" separator used
+      # in appsettings.json.
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Username=${POSTGRES_USER:-restoreuser};Password=${POSTGRES_PASSWORD};Database=${POSTGRES_DB:-restore}"
+      JWTSettings__TokenKey: ${JWT_TOKEN_KEY:?JWT_TOKEN_KEY is required - put it in /opt/restore/.env}
+      StripeSettings__PublishableKey: ${STRIPE_PUBLISHABLE_KEY:-}
+      StripeSettings__SecretKey: ${STRIPE_SECRET_KEY:-}
+      StripeSettings__WhSecret: ${STRIPE_WEBHOOK_SECRET:-}
+      Cloudinary__CloudName: ${CLOUDINARY_CLOUD_NAME:-}
+      Cloudinary__ApiKey: ${CLOUDINARY_API_KEY:-}
+      Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET:-}
+    healthcheck:
+      # The runtime image has no curl/wget, so probe the listening socket with
+      # bash's /dev/tcp. `timeout` turns a hang into a failure.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: local
+
+networks:
+  # A stable network name so the caddy service in the other compose project can
+  # attach to it as an external network. Without this, Compose would name it
+  # "restore_default".
+  default:
+    name: restore-net
+
+volumes:
+  pgdata:
+    name: restore-pgdata

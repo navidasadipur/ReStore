@@ -1,0 +1,53 @@
+# Local development / testing stack.
+#
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# This file is for YOUR MACHINE only. The server does not use it - it runs
+# deploy/compose.yml inside /opt/restore (see deploy/DEPLOY.md).
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: restore-db-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: restoreuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      POSTGRES_DB: restore
+    volumes:
+      - pgdata-local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restoreuser -d restore"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: restore:local
+    container_name: restore-local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Loopback only - this is a local test stack, nothing should be reachable
+      # from your network.
+      - "127.0.0.1:8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Username=restoreuser;Password=${POSTGRES_PASSWORD:-secret};Database=restore"
+      JWTSettings__TokenKey: ${JWT_TOKEN_KEY:-local-only-not-a-real-secret-key-32}
+      StripeSettings__PublishableKey: ${STRIPE_PUBLISHABLE_KEY:-}
+      StripeSettings__SecretKey: ${STRIPE_SECRET_KEY:-}
+      StripeSettings__WhSecret: ${STRIPE_WEBHOOK_SECRET:-}
+      Cloudinary__CloudName: ${CLOUDINARY_CLOUD_NAME:-}
+      Cloudinary__ApiKey: ${CLOUDINARY_API_KEY:-}
+      Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET:-}
+
+volumes:
+  pgdata-local:

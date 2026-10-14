@@ -48,6 +48,11 @@ README.md
 **/node_modules
 client/build
 
+# Stale client build committed to the repo. The image rebuilds the client from
+# client/ and copies the result into the runtime stage, so shipping this copy
+# would only bloat the context and leave old hashed bundles in the image.
+API/wwwroot
+
 # local config and data
 **/appsettings.Development.json
 **/*.db
