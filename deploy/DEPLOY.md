@@ -237,26 +237,85 @@ These are real and should be handled before the site is advertised:
 
 ---
 
-## 7. Phase 2 - the CD half
+## 7. Pull-based deployment: progress and next steps
 
-Right now the pipeline builds and pushes, but a human runs the two commands in
-3.2. To automate that, the deploy job needs a runner that can reach this
-repository. The existing self-hosted runner is registered against
-`navidasadipur/NavidAsadipurWebsite` only, so a ReStore job would sit queued
-forever. Two options:
+The chosen design builds on GitHub-hosted runners. A systemd timer on the VPS
+will check GHCR every **30 minutes** and run a short-lived deployment script.
+No inbound SSH from GitHub and no new self-hosted runner are required. The
+script and timer are **not implemented or installed yet**; deployment remains
+manual until the remaining server work is completed.
 
-- **Register a second self-hosted runner for this repository** on the server,
-  as the `runner` user, which already has Docker group membership and owns
-  `/opt/restore`. Then the commented-out `deploy` job in
-  `.github/workflows/build.yml` works as written.
-- **Run the deploy job on `ubuntu-latest` and SSH to the server**, using a
-  deploy key stored as a repository secret. No runner to maintain, but it needs
-  an inbound SSH key and a repository secret.
+### 7.1 Server access: verified
 
-Either way the deploy command is the same two lines:
+The operator successfully ran the following command. Docker reported
+`Image is up to date`, confirming Docker and GHCR pull access as `runner`.
+No new credential is needed for this image.
 
 ```bash
-cd /opt/restore
-export RESTORE_TAG=sha-<sha>
-docker compose pull app && docker compose up -d app
+sudo -H -u runner docker pull ghcr.io/navidasadipur/restore:sha-51ce406
 ```
+
+Keep this working baseline for the first deployment and rollback test:
+
+```text
+ghcr.io/navidasadipur/restore:sha-51ce406
+sha256:4aa156c35df5b757104ed772a834dc3131d410f92edd5957ea8b7a0c4bc75286
+```
+
+### 7.2 CI publication contract
+
+The workflow builds on pushes to `main`, `develop`, and `deploy/docker-cicd`,
+or on manual runs. Successful builds publish both `sha-<full-40-character-SHA>`
+and the legacy `sha-<7-character-SHA>` tag. The Dockerfile compiles the React
+client and publishes the API. No independent automated test suites currently
+exist; compilation alone does not prove runtime or database health. Future
+test gates must run before production promotion.
+
+Only a successful run on `refs/heads/main` updates `production` and `latest`,
+using the exact digest returned by the build. Main runs are serialized without
+automatic cancellation. Immediately before promotion, the workflow checks
+remote main HEAD and skips stale commits, including reruns of older commits.
+If main advances after that check, this run can briefly publish its image;
+the newer main run cannot publish concurrently or be overwritten later by this
+run. Other branches publish SHA tags only.
+
+Rebuilding a commit can change its image and update its SHA tags. The immutable
+release identity is the **digest**. The future agent must resolve `production`
+once and deploy `IMAGE@sha256:...`, not a moving tag. The current Compose file
+uses `IMAGE:TAG`; digest support is part of the next phase.
+
+The run summary records the full SHA tag, exact digest, and promotion result.
+A green workflow means build/publication succeeded, not that the VPS deployed
+the image. No new GitHub secrets are needed; CI uses `GITHUB_TOKEN` with
+`packages: write` as before.
+
+### 7.3 Verify publication before installing the agent
+
+1. Push these changes to `develop`. Confirm the build passes and its summary
+   contains a full SHA tag and digest, with production unchanged.
+2. Merge to `main`. Confirm the promotion step passes and the summary reports
+   production publication. Its logs include the production manifest and digest.
+3. On the VPS, verify registry access to the new channel as `runner`:
+
+   ```bash
+   sudo -H -u runner docker manifest inspect ghcr.io/navidasadipur/restore:production
+   ```
+
+   This only inspects registry metadata and does not restart the application.
+   Platform digests inside a manifest list can differ from the top-level image
+   digest in the build summary.
+4. Run the workflow on a non-main branch again. Confirm it does not change
+   production. Rerunning an old main commit should also skip promotion.
+
+### 7.4 Remaining server work
+
+Implement digest-pinned Compose configuration, the deployment script, and the
+30-minute systemd timer. Include a lock, bounded network/health checks, persisted
+current/previous versions, rollback, suppression of repeated attempts for failed
+digests, pause/resume controls, and journal logs. Verify healthy deployment,
+rollback, registry outage, unchanged-version behavior, and reboot recovery before
+enabling the timer. Existing runners for other repositories remain in place.
+
+Image rollback does not undo startup database migrations. Keep migrations
+backward compatible and back up the database before controlled deployments
+that change its schema.

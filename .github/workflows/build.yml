@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - main
+      - develop
       - deploy/docker-cicd
   workflow_dispatch:
 
@@ -21,14 +22,17 @@ env:
   IMAGE: ghcr.io/navidasadipur/restore
   DEPLOY_DIR: /opt/restore
 
-# If you push twice quickly, cancel the older build instead of racing.
+# Serialize main builds through promotion. Do not cancel a running promotion.
+# Other branches can cancel superseded builds. Ordering is not guaranteed, so
+# promotion also checks that this commit is still the current main HEAD.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     permissions:
       contents: read
@@ -48,60 +52,86 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Short commit SHA
+      - name: Image tags
         id: vars
-        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "full=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ steps.vars.outputs.full }}
             ${{ env.IMAGE }}:sha-${{ steps.vars.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           # Layer cache lives in GitHub Actions cache, so rebuilds only redo
           # the stages that actually changed.
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The Dockerfile compiles the React client and publishes the API. There
+      # are currently no independent automated test suites in this repository.
+      # Add future test gates before this step, never after promotion.
+      - name: Publish production channel from current main only
+        id: production
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          main_sha=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo 'A newer main commit exists; leaving production unchanged.'
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Promote the exact build output; do not rebuild or resolve a SHA tag.
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$IMAGE:production" \
+            --tag "$IMAGE:latest" \
+            "$IMAGE@$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$IMAGE:production"
+          echo 'published=true' >> "$GITHUB_OUTPUT"
+
       - name: Summary
+        shell: bash
+        env:
+          IMAGE_TAG: sha-${{ steps.vars.outputs.full }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          PRODUCTION_PUBLISHED: ${{ steps.production.outputs.published }}
         run: |
           {
             echo "### Image pushed"
             echo
-            echo '`${{ env.IMAGE }}:sha-${{ steps.vars.outputs.short }}`'
+            echo "\`$IMAGE:$IMAGE_TAG\`"
+            echo
+            echo "Exact image: \`$IMAGE@$IMAGE_DIGEST\`"
+            echo
+            if [[ "$PRODUCTION_PUBLISHED" == 'true' ]]; then
+              echo 'production and latest now reference this successful main build.'
+            else
+              echo 'production and latest were not changed by this run.'
+            fi
+            echo
+            echo 'Build and publication succeeded; server deployment is separate.'
             echo
             echo "Deploy on the server with:"
             echo
             echo '```'
             echo "cd $DEPLOY_DIR"
-            echo "export RESTORE_TAG=sha-${{ steps.vars.outputs.short }}"
+            echo "export RESTORE_TAG=$IMAGE_TAG"
             echo "docker compose pull app && docker compose up -d app"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ---------------------------------------------------------------------------
-  # Phase 2 - automatic deploy.
-  #
-  # This cannot run yet: the self-hosted runner on the server is registered
-  # against the navidasadipur/NavidAsadipurWebsite repository only, so ReStore
-  # jobs have no runner to land on and would sit queued forever.
-  #
-  # Two ways to close that gap (see deploy/DEPLOY.md):
-  #   a) register a second self-hosted runner for this repository, or
-  #   b) run this job on ubuntu-latest and deploy over SSH with a deploy key.
-  #
-  # deploy:
-  #   needs: build
-  #   runs-on: self-hosted
-  #   steps:
-  #     - name: Deploy on the server
-  #       run: |
-  #         set -euo pipefail
-  #         cd "$DEPLOY_DIR"
-  #         export RESTORE_TAG="sha-$(git rev-parse --short=7 HEAD)"
-  #         docker compose pull app
-  #         docker compose up -d app
-  #         docker compose ps
-  # ---------------------------------------------------------------------------
+  # Deployment will be initiated by a server-side systemd timer every 30
+  # minutes. No SSH deployment or additional self-hosted runner is used here.
