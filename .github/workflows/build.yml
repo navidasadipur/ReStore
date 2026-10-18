@@ -1,0 +1,107 @@
+name: Build and Push
+
+# Builds the ReStore image on a GitHub-hosted runner and pushes it to GHCR.
+#
+# Why not build on the self-hosted runner on the server (the NavidAsadipurWebsite
+# pattern)? ReStore compiles a React 18 + MUI app, and that webpack build needs
+# more than 1 GB of heap. The VPS has 967 MB of RAM and 1 vCPU, so the build
+# spends all its time in swap and eventually dies with "JavaScript heap out of
+# memory". A hosted runner does it in a few minutes for free (public repo).
+#
+# The server then only pulls the finished image - see deploy/DEPLOY.md.
+
+on:
+  push:
+    branches:
+      - main
+      - deploy/docker-cicd
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/navidasadipur/restore
+  DEPLOY_DIR: /opt/restore
+
+# If you push twice quickly, cancel the older build instead of racing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Short commit SHA
+        id: vars
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ steps.vars.outputs.short }}
+          # Layer cache lives in GitHub Actions cache, so rebuilds only redo
+          # the stages that actually changed.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image pushed"
+            echo
+            echo '`${{ env.IMAGE }}:sha-${{ steps.vars.outputs.short }}`'
+            echo
+            echo "Deploy on the server with:"
+            echo
+            echo '```'
+            echo "cd $DEPLOY_DIR"
+            echo "export RESTORE_TAG=sha-${{ steps.vars.outputs.short }}"
+            echo "docker compose pull app && docker compose up -d app"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Phase 2 - automatic deploy.
+  #
+  # This cannot run yet: the self-hosted runner on the server is registered
+  # against the navidasadipur/NavidAsadipurWebsite repository only, so ReStore
+  # jobs have no runner to land on and would sit queued forever.
+  #
+  # Two ways to close that gap (see deploy/DEPLOY.md):
+  #   a) register a second self-hosted runner for this repository, or
+  #   b) run this job on ubuntu-latest and deploy over SSH with a deploy key.
+  #
+  # deploy:
+  #   needs: build
+  #   runs-on: self-hosted
+  #   steps:
+  #     - name: Deploy on the server
+  #       run: |
+  #         set -euo pipefail
+  #         cd "$DEPLOY_DIR"
+  #         export RESTORE_TAG="sha-$(git rev-parse --short=7 HEAD)"
+  #         docker compose pull app
+  #         docker compose up -d app
+  #         docker compose ps
+  # ---------------------------------------------------------------------------
