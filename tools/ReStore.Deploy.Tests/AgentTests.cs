@@ -4,241 +4,97 @@ using Xunit;
 
 namespace ReStore.Deploy.Tests;
 
-public class AgentTests : IDisposable
+public sealed class AgentTests : IDisposable
 {
-    public const string Old = DeploymentAgent.Image + "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    public const string New = DeploymentAgent.Image + "@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private readonly string root = Path.Combine(Path.GetTempPath(), "restore-tests-" + Guid.NewGuid().ToString("N"));
-    private readonly FakeAgent agent;
+    private readonly FakeHost host = new();
     public AgentTests()
     {
-        Directory.CreateDirectory(Path.Combine(root, ".deploy"));
+        Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "compose.yml"), "services: {}\n");
-        File.WriteAllText(Path.Combine(root, ".env"), "SECRET=not-for-logs\n");
-        agent = new(root);
+        File.WriteAllText(Path.Combine(root, ".env"), "RESTORE_TAG=production\n");
     }
-    private async Task ReadyAsync()
+    [Fact] public async Task DeploysOnlyAppAndWaitsForHealthBeforeApiCheck()
     {
-        await agent.InitializeAsync(Old);
-        await agent.ActAsync("resume");
-        agent.Calls.Clear();
+        await new DeploymentAgent(root, host).RunAsync();
+        Assert.Equal(4, host.Calls.Count);
+        Assert.Equal("config", host.Calls[0][^3]);
+        Assert.Equal(new[] { "pull", "app" }, host.Calls[1][^2..]);
+        Assert.Equal(new[] { "up", "-d", "--no-deps", "--no-build", "--pull", "never",
+            "--wait", "--wait-timeout", "180", "app" }, host.Calls[2][^10..]);
+        Assert.Equal(new[] { "api-check" }, host.Calls[3]);
+        Assert.False(Directory.Exists(Path.Combine(root, ".deploy")));
+        Assert.False(File.Exists(Path.Combine(root, "compose.override.yml")));
     }
-    [Fact] public async Task InitializationPinsBaselineWithoutRestartingAndStaysPaused()
+    [Fact] public async Task FailedPullNeverRunsComposeUp()
     {
-        await agent.InitializeAsync(Old);
-        Assert.True(agent.Load().Paused);
-        Assert.Contains(Old, File.ReadAllText(agent.OverridePath));
-        Assert.Empty(agent.UpCalls);
+        host.FailStep = "pull";
+        await Assert.ThrowsAsync<IOException>(() => new DeploymentAgent(root, host).RunAsync());
+        Assert.Equal(2, host.Calls.Count);
     }
-    [Fact] public async Task SuccessfulReleaseRecordsPreviousAndOnlyRecreatesApp()
+    [Fact] public async Task FailedContainerHealthStopsWithoutRollback()
     {
-        await ReadyAsync();
-        await agent.ActAsync("check");
-        var state = agent.Load();
-        Assert.Equal(New, state.Current);
-        Assert.Equal(Old, state.Previous);
-        Assert.Null(state.Pending);
-        Assert.Contains(New, File.ReadAllText(agent.OverridePath));
-        var up = Assert.Single(agent.UpCalls);
-        Assert.Contains("--no-deps", up);
-        Assert.Contains("--no-build", up);
-        Assert.Equal("app", up[^1]);
+        host.FailStep = "up";
+        await Assert.ThrowsAsync<IOException>(() => new DeploymentAgent(root, host).RunAsync());
+        Assert.Equal(3, host.Calls.Count);
     }
-    [Fact] public async Task UnchangedReleaseDoesNotPullOrRestart()
+    [Fact] public async Task FailedApiCheckReportsFailureWithoutRollback()
     {
-        await ReadyAsync(); agent.Channel = Old;
-        await agent.ActAsync("check");
-        Assert.Empty(agent.UpCalls);
-        Assert.DoesNotContain(agent.Calls, call => call.Take(2).SequenceEqual(["docker", "pull"]));
+        host.FailStep = "api-check";
+        await Assert.ThrowsAsync<IOException>(() => new DeploymentAgent(root, host).RunAsync());
+        Assert.Equal(4, host.Calls.Count);
     }
-    [Fact] public async Task RegistryFailureLeavesAppUnchangedAndRecordsError()
+    [Fact] public async Task WrongImageConfigIsRejectedBeforePull()
     {
-        await ReadyAsync(); agent.Channel = null;
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.Equal(Old, agent.Load().Current);
-        Assert.Contains(Old, File.ReadAllText(agent.OverridePath));
-        Assert.Empty(agent.UpCalls);
-        Assert.Contains("Registry", agent.Load().LastError);
-    }
-    [Fact] public async Task DownloadFailureDoesNotStartTransaction()
-    {
-        await ReadyAsync(); agent.FailPull = true;
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.Null(agent.Load().Pending);
-        Assert.Contains(Old, File.ReadAllText(agent.OverridePath));
-        Assert.Empty(agent.UpCalls);
-    }
-    [Fact] public async Task FailedHealthRollsBackAndDoesNotRetryBadDigest()
-    {
-        await ReadyAsync(); agent.BadHealth.Add(New);
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.Equal(Old, agent.Load().Current);
-        Assert.Null(agent.Load().Pending);
-        Assert.Contains(New, agent.Load().Failed);
-        Assert.Equal(2, agent.UpCalls.Count());
-        agent.Calls.Clear();
-        await agent.ActAsync("check");
-        Assert.Empty(agent.UpCalls);
-    }
-    [Fact] public async Task ComposeFailureRollsBack()
-    {
-        await ReadyAsync(); agent.FailUp.Add(New);
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.Equal(Old, agent.Load().Current);
-        Assert.Null(agent.Load().Pending);
-        Assert.Contains(Old, File.ReadAllText(agent.OverridePath));
-    }
-    [Fact] public async Task FailedRollbackPausesAndRetainsRecoveryJournal()
-    {
-        await ReadyAsync(); agent.BadHealth.Add(New); agent.FailUp.Add(Old);
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.True(agent.Load().Paused);
-        Assert.Equal(New, agent.Load().Pending);
-        Assert.Contains(New, agent.Load().Failed);
-    }
-    [Fact] public async Task RestartRecoversPendingDeploymentAndRemainsPaused()
-    {
-        await ReadyAsync();
-        var state = agent.Load(); state.Pending = New;
-        agent.Save(state); agent.Pin(New);
-        var restarted = new FakeAgent(root);
-        await restarted.ActAsync("check");
-        Assert.True(restarted.Load().Paused);
-        Assert.Null(restarted.Load().Pending);
-        Assert.Equal(Old, restarted.Load().Current);
-        Assert.Contains(Old, File.ReadAllText(restarted.OverridePath));
-        Assert.DoesNotContain(restarted.Calls, call => call[0] == "resolve");
-    }
-    [Fact] public async Task ManualRollbackUsesLocalImageAndPauses()
-    {
-        await ReadyAsync(); await agent.ActAsync("check");
-        agent.Calls.Clear(); agent.FailPull = true;
-        await agent.ActAsync("rollback");
-        Assert.Equal(Old, agent.Load().Current);
-        Assert.True(agent.Load().Paused);
-        Assert.DoesNotContain(agent.Calls, call => call.Take(2).SequenceEqual(["docker", "pull"]));
-    }
-    [Fact] public async Task PausePreventsRegistryAccess()
-    {
-        await ReadyAsync(); await agent.ActAsync("pause"); agent.Calls.Clear();
-        await agent.ActAsync("check");
-        Assert.DoesNotContain(agent.Calls, call => call[0] == "resolve");
-        Assert.Empty(agent.UpCalls);
-    }
-    [Fact] public async Task UnmanagedOverrideIsNotOverwritten()
-    {
-        await ReadyAsync(); File.WriteAllText(agent.OverridePath, "custom");
-        await Assert.ThrowsAsync<IOException>(() => agent.ActAsync("check"));
-        Assert.Equal("custom", File.ReadAllText(agent.OverridePath));
-    }
-    [Fact] public void OtherRepositoryAndMutableTagAreRejected()
-    {
-        Assert.Throws<ArgumentException>(() => agent.Pin("other/repo@sha256:" + new string('a', 64)));
-        Assert.Throws<ArgumentException>(() => agent.Pin(DeploymentAgent.Image + ":production"));
-    }
-    [Fact] public void LockExcludesAnotherControlCommand()
-    {
-        using var held = DeploymentLock.Acquire(agent.DataDirectory);
-        Assert.Throws<IOException>(() => DeploymentLock.Acquire(agent.DataDirectory));
-    }
-    [Fact] public async Task ResolveUsesTopLevelManifestDigest()
-    {
-        var host = new ProbeHost { Manifest = "{\"digest\":\"sha256:" + new string('b', 64) + "\"}" };
-        var real = new DeploymentAgent(root, host);
-        Assert.Equal(New, await real.ResolveAsync());
-        Assert.Contains("{{json .Manifest}}", Assert.Single(host.Calls));
+        host.Image = "ghcr.io/navidasadipur/restore:latest";
+        await Assert.ThrowsAsync<IOException>(() => new DeploymentAgent(root, host).RunAsync());
+        Assert.Single(host.Calls);
     }
     [Theory]
-    [InlineData("wrong-image", false, false)]
-    [InlineData("expected", true, false)]
-    [InlineData("expected", false, true)]
-    public async Task HealthRequiresMatchingImageAndDatabaseApi(string runningId, bool databaseFails, bool succeeds)
+    [InlineData("compose.override.yml")]
+    [InlineData("compose.override.yaml")]
+    public async Task ExistingOverridesAreNotIgnoredOrOverwritten(string name)
     {
-        var host = new ProbeHost { RunningId = runningId, DatabaseFails = databaseFails };
-        var real = new DeploymentAgent(root, host);
-        if (succeeds) await real.HealthyAsync(New, 0);
-        else await Assert.ThrowsAsync<IOException>(() => real.HealthyAsync(New, 0));
-        Assert.Equal(succeeds ? 1 : 0, host.PublicChecks);
-    }
-    [Fact] public async Task PublicApiFailureDoesNotPassHealthGate()
-    {
-        var real = new DeploymentAgent(root, new ProbeHost { PublicFails = true });
-        await Assert.ThrowsAsync<IOException>(() => real.HealthyAsync(New, 0));
+        File.WriteAllText(Path.Combine(root, name), "custom");
+        await Assert.ThrowsAsync<IOException>(() => new DeploymentAgent(root, host).RunAsync());
+        Assert.Empty(host.Calls);
+        Assert.Equal("custom", File.ReadAllText(Path.Combine(root, name)));
     }
     [Theory]
-    [InlineData("")]
     [InlineData("init")]
-    [InlineData("check --unknown x")]
-    public void InvalidArgumentsFail(string args) => Assert.Throws<ArgumentException>(() => Arguments.Parse(args.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+    [InlineData("rollback")]
+    [InlineData("check --image example")]
+    [InlineData("check --directory")]
+    public void RemovedOrInvalidOptionsAreRejected(string args) => Assert.Throws<ArgumentException>(
+        () => Arguments.Parse(args.Split(' ')));
+    [Fact] public void DefaultsAndDirectoryOptionAreSupported()
+    {
+        Assert.Equal("/opt/restore", Arguments.Parse([]).Directory);
+        Assert.Equal(root, Arguments.Parse(["check", "--directory", root]).Directory);
+    }
     public void Dispose()
     {
-        // Only remove this fixture's randomly named directory directly under temp.
         var temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
         if (Path.GetDirectoryName(root) != temp || !Path.GetFileName(root).StartsWith("restore-tests-"))
             throw new IOException("Unexpected cleanup target");
         Directory.Delete(root, recursive: true);
     }
-
-    private sealed class FakeAgent(string directory) : DeploymentAgent(directory)
+    private sealed class FakeHost : DeploymentHost
     {
         public List<string[]> Calls { get; } = [];
-        public HashSet<string> BadHealth { get; } = [];
-        public HashSet<string> FailUp { get; } = [];
-        public bool FailPull { get; set; }
-        public string? Channel { get; set; } = New;
-        public IEnumerable<string[]> UpCalls => Calls.Where(call => call.Take(2).SequenceEqual(["compose", "up"]));
-        public override Task<string> CommandAsync(int seconds, params string[] args)
-        {
-            Calls.Add(args);
-            if (args.Take(2).SequenceEqual(["docker", "pull"]) && FailPull) throw new IOException("Registry unavailable");
-            return Task.FromResult("image-id");
-        }
-        public override Task<string> ComposeAsync(params string[] args)
-        {
-            Calls.Add(["compose", .. args]);
-            if (args[0] == "up" && FailUp.Any(image => File.ReadAllText(OverridePath).Contains(image)))
-                throw new IOException("Compose failed");
-            return Task.FromResult("");
-        }
-        public override Task HealthyAsync(string image, int seconds = 180)
-        {
-            if (BadHealth.Contains(image)) throw new IOException("Health failed");
-            return Task.CompletedTask;
-        }
-        public override Task<string> ResolveAsync()
-        {
-            Calls.Add(["resolve"]);
-            return Task.FromResult(Channel ?? throw new IOException("Registry unavailable"));
-        }
-    }
-    private sealed class ProbeHost : DeploymentHost
-    {
-        public List<string[]> Calls { get; } = [];
-        public string Manifest { get; set; } = "{}";
-        public string RunningId { get; set; } = "expected";
-        public bool DatabaseFails { get; set; }
-        public bool PublicFails { get; set; }
-        public int PublicChecks { get; private set; }
+        public string Image { get; set; } = DeploymentAgent.ProductionImage;
+        public string? FailStep { get; set; }
         public override Task<string> RunAsync(string directory, TimeSpan timeout, params string[] args)
         {
             Calls.Add(args);
-            if (args.Take(3).SequenceEqual(["docker", "buildx", "imagetools"])) return Task.FromResult(Manifest);
-            if (args.Take(3).SequenceEqual(["docker", "image", "inspect"])) return Task.FromResult("expected");
-            if (args.Take(2).SequenceEqual(["docker", "inspect"]))
-                return Task.FromResult(JsonSerializer.Serialize(new[] { new { Image = RunningId,
-                    State = new { Running = true, Health = new { Status = "healthy" } } } }));
-            if (args.Take(2).SequenceEqual(["docker", "exec"]))
-            {
-                Assert.Contains("/api/products", args[^1]);
-                if (DatabaseFails) throw new IOException("Database returned HTTP 500");
-                return Task.FromResult("");
-            }
-            throw new IOException("Unexpected command");
+            if (args.Contains(FailStep)) throw new IOException("Simulated " + FailStep + " failure");
+            return Task.FromResult(args.Contains("config")
+                ? JsonSerializer.Serialize(new { services = new { app = new { image = Image } } }) : "");
         }
         public override Task ProbePublicApiAsync()
         {
-            if (PublicFails) throw new IOException("Public API failed");
-            PublicChecks++;
+            Calls.Add(["api-check"]);
+            if (FailStep == "api-check") throw new IOException("API failed");
             return Task.CompletedTask;
         }
     }

@@ -237,90 +237,58 @@ These are real and should be handled before the site is advertised:
 
 ---
 
-## 7. Pull-based deployment: progress and next steps
+## 7. Simple pull-based deployment: progress and next steps
 
-The chosen design builds on GitHub-hosted runners. A systemd timer on the VPS
-will check GHCR every **30 minutes** and run a short-lived .NET deployment tool.
-No inbound SSH from GitHub and no new self-hosted runner are required. The
-service, timer, and installation guide are in `deploy/`; the C# agent and xUnit
-tests are under `tools/`. They are
-**not installed or live-tested on the VPS yet**; see [AGENT.md](AGENT.md) for
-installation and the controlled first deployment.
+The .NET Deployment Agent in `tools/ReStore.Deploy` runs Compose every
+**30 minutes**, through a systemd service and timer. It pulls the `production`
+image, updates only `app`, waits for container health, and checks the public
+products API. No inbound SSH from GitHub or additional self-hosted runner is
+needed. There is no custom state file, automatic rollback, failed-digest
+tracking, crash recovery, or generated Compose override. Rollback is manual.
 
-### 7.1 Server access: verified
+### Verified so far
 
-The operator successfully ran the following command. Docker reported
-`Image is up to date`, confirming Docker and GHCR pull access as `runner`.
-No new credential is needed for this image.
+- The operator successfully pulled the baseline as the deployment user:
+  `sudo -H -u runner docker pull ghcr.io/navidasadipur/restore:sha-51ce406`.
+- The .NET agent, tests, systemd files and instructions are prepared locally.
+- The agent and timer have not been installed or live-tested on the VPS.
 
-```bash
-sudo -H -u runner docker pull ghcr.io/navidasadipur/restore:sha-51ce406
-```
-
-Keep this working baseline for the first deployment and rollback test:
+The original working baseline was `sha-51ce406`, with repository digest:
 
 ```text
-ghcr.io/navidasadipur/restore:sha-51ce406
 sha256:4aa156c35df5b757104ed772a834dc3131d410f92edd5957ea8b7a0c4bc75286
 ```
 
-### 7.2 CI publication contract
+### CI publication contract
 
 The workflow builds on pushes to `main`, `develop`, and `deploy/docker-cicd`,
-or on manual runs. Successful builds publish both `sha-<full-40-character-SHA>`
-and the legacy `sha-<7-character-SHA>` tag. The Dockerfile compiles the React
-client and publishes the API. The deployment agent's unit tests also run before
-the image build. No application test suites currently exist; compilation and
-agent tests do not prove application runtime or database health. Future test
-gates must run before production promotion.
+or manual runs. It tests the .NET deployment tools, publishes the self-contained
+Linux agent artifact, then builds and pushes the application image with full
+and legacy short commit SHA tags. Only a successful current-main run updates
+`production` and `latest`. Main runs are serialized and stale commits skip
+promotion. The summary reports the exact build digest and promotion result.
+There are no application test suites; these checks do not prove runtime health.
 
-Only a successful run on `refs/heads/main` updates `production` and `latest`,
-using the exact digest returned by the build. Main runs are serialized without
-automatic cancellation. Immediately before promotion, the workflow checks
-remote main HEAD and skips stale commits, including reruns of older commits.
-If main advances after that check, this run can briefly publish its image;
-the newer main run cannot publish concurrently or be overwritten later by this
-run. Other branches publish SHA tags only.
+SHA tags identify source commits but can change on rebuild; digest references
+identify exact image content. This simple agent uses the mutable production tag
+and Compose's local image handling instead of custom digest resolution/pinning.
+A failed pull does not proceed to `up`; a failed health check reports failure
+without automatic rollback. The next scheduled run can retry the same release.
+A green CI run means publication succeeded, not deployment to the VPS.
 
-Rebuilding a commit can change its image and update its SHA tags. The immutable
-release identity is the **digest**. The future agent must resolve `production`
-once and deploy `IMAGE@sha256:...`, not a moving tag. The agent supplies a
-persistent `compose.override.yml` to override the base file's `IMAGE:TAG` with
-the exact digest. The base Compose file remains usable for first-time setup.
+### Remaining steps
 
-The run summary records the full SHA tag, exact digest, and promotion result.
-A green workflow means build/publication succeeded, not that the VPS deployed
-the image. No new GitHub secrets are needed; CI uses `GITHUB_TOKEN` with
-`packages: write` as before.
+1. Push to `develop` and confirm the Linux tests, artifact and image build pass
+   while production is unchanged.
+2. Merge to `main` and verify production publication.
+3. Follow [AGENT.md](AGENT.md): check server prerequisites, record the current
+   image and back up the database, install the agent and set `.env` to use
+   `RESTORE_TAG=production`.
+4. Run one controlled deployment through the service and inspect the logs/API.
+5. Verify manual rollback and unchanged-image behavior, then enable the
+   30-minute timer. Use systemd to pause/resume scheduling and avoid concurrent
+   manual deployment commands. Existing runners for other repositories stay.
 
-### 7.3 Verify publication before installing the agent
-
-1. Push these changes to `develop`. Confirm the build passes and its summary
-   contains a full SHA tag and digest, with production unchanged.
-2. Merge to `main`. Confirm the promotion step passes and the summary reports
-   production publication. Its logs include the production manifest and digest.
-3. On the VPS, verify registry access to the new channel as `runner`:
-
-   ```bash
-   sudo -H -u runner docker manifest inspect ghcr.io/navidasadipur/restore:production
-   ```
-
-   This only inspects registry metadata and does not restart the application.
-   Platform digests inside a manifest list can differ from the top-level image
-   digest in the build summary.
-4. Run the workflow on a non-main branch again. Confirm it does not change
-   production. Rerunning an old main commit should also skip promotion.
-
-### 7.4 Remaining server work
-
-Install and validate the self-contained .NET tool and 30-minute systemd timer following
-[AGENT.md](AGENT.md). The agent includes digest pinning, a lock, bounded network
-and health checks, persisted current/previous versions, rollback, failed-digest
-suppression, pause/resume, and journal output through the service. Verify healthy
-deployment, rollback, registry outage, unchanged-version behavior, and reboot
-recovery on the VPS before relying on the timer. Existing runners for other
-repositories remain in place.
-
-Image rollback does not undo startup database migrations. Keep migrations
-backward compatible and back up the database before controlled deployments
-that change its schema.
+Image rollback does not undo database migrations. Keep schema changes backward
+compatible and maintain database backups. The unit tests do not replace these
+live server checks.

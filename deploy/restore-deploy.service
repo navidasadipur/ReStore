@@ -11,7 +11,7 @@ Environment=HOME=/home/runner
 WorkingDirectory=/opt/restore
 ExecStart=/usr/local/lib/restore-deploy/restore-deploy check
 Environment=DOTNET_EnableDiagnostics=0
-TimeoutStartSec=20min
+TimeoutStartSec=10min
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

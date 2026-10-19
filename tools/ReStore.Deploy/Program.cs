@@ -4,8 +4,7 @@ try
 {
     var options = Arguments.Parse(args);
     var agent = new DeploymentAgent(options.Directory);
-    using var deploymentLock = DeploymentLock.Acquire(agent.DataDirectory);
-    await agent.ActAsync(options.Action, options.Image);
+    await agent.RunAsync();
     return 0;
 }
 catch (Exception ex)
