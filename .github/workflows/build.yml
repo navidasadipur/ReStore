@@ -47,7 +47,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Test deployment agent and SSH probe
+      - name: Test deployment agent
         run: dotnet test tools/ReStore.Deploy.Tests/ReStore.Deploy.Tests.csproj --configuration Release
 
       - name: Publish self-contained Linux deployment agent
