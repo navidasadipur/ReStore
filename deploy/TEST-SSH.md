@@ -2,6 +2,8 @@
 
 This manual test runs on GitHub's `ubuntu-latest`, not on the VPS. It does not
 install a runner, build an image, pull an image, or restart containers.
+The network probe is a .NET console application in `tools/ReStore.SshProbe`;
+the workflow installs a .NET SDK on the GitHub-hosted runner to execute it.
 
 ## 1. Test the network first (no secrets)
 

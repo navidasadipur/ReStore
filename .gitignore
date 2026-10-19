@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 # and IS tracked; the filled-in .env never is.
 .env
 deploy/.env
+
+# Published deployment tool bundles.
+/artifacts/

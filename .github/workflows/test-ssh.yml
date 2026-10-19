@@ -14,7 +14,8 @@ on:
         default: '22'
         type: string
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -24,57 +25,16 @@ jobs:
       SSH_HOST: ${{ inputs.host }}
       SSH_PORT: ${{ inputs.port }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Test network and SSH banner (no credentials needed)
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import os
-          import socket
-          import sys
-          import time
-
-          host = os.environ['SSH_HOST'].strip()
-          port = int(os.environ['SSH_PORT'])
-          if not host or host.startswith('-') or any(c.isspace() for c in host):
-              sys.exit('Enter a plain server IP or hostname.')
-          if not 1 <= port <= 65535:
-              sys.exit('SSH port must be between 1 and 65535.')
-
-          # Try three independent connections to distinguish a persistent block
-          # from a single transient failure. Require an SSH protocol response.
-          passed = 0
-          for attempt in range(1, 4):
-              try:
-                  with socket.create_connection((host, port), timeout=10) as conn:
-                      conn.settimeout(10)
-                      conn.sendall(b'SSH-2.0-ReStoreConnectivityTest\r\n')
-                      data = b''
-                      deadline = time.monotonic() + 10
-                      while len(data) < 8192:
-                          conn.settimeout(max(0.1, deadline - time.monotonic()))
-                          chunk = conn.recv(1024)
-                          if not chunk:
-                              break
-                          data += chunk
-                          if any(line.startswith(b'SSH-') for line in data.splitlines()):
-                              passed += 1
-                              print(f'Attempt {attempt}: SSH protocol response received.', flush=True)
-                              break
-                          if time.monotonic() >= deadline:
-                              break
-                      else:
-                          pass
-                      if not any(line.startswith(b'SSH-') for line in data.splitlines()):
-                          raise RuntimeError('TCP connected, but no SSH protocol response received')
-              except (OSError, RuntimeError) as exc:
-                  print(f'Attempt {attempt}: {type(exc).__name__}: {exc}', flush=True)
-
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write(f'### SSH network test\n\nSSH responses: {passed}/3 from a GitHub-hosted runner.\n\n')
-              summary.write('This tests network reachability only; it does not authenticate or deploy.\n')
-          if passed != 3:
-              sys.exit('Network test failed or was intermittent. Inspect the attempts above.')
-          PY
+        run: dotnet run --project tools/ReStore.SshProbe/ReStore.SshProbe.csproj --configuration Release
 
       - name: Check whether authentication test is configured
         id: auth

@@ -240,10 +240,12 @@ These are real and should be handled before the site is advertised:
 ## 7. Pull-based deployment: progress and next steps
 
 The chosen design builds on GitHub-hosted runners. A systemd timer on the VPS
-will check GHCR every **30 minutes** and run a short-lived deployment script.
+will check GHCR every **30 minutes** and run a short-lived .NET deployment tool.
 No inbound SSH from GitHub and no new self-hosted runner are required. The
-script and timer are **not implemented or installed yet**; deployment remains
-manual until the remaining server work is completed.
+service, timer, and installation guide are in `deploy/`; the C# agent and xUnit
+tests are under `tools/`. They are
+**not installed or live-tested on the VPS yet**; see [AGENT.md](AGENT.md) for
+installation and the controlled first deployment.
 
 ### 7.1 Server access: verified
 
@@ -267,9 +269,10 @@ sha256:4aa156c35df5b757104ed772a834dc3131d410f92edd5957ea8b7a0c4bc75286
 The workflow builds on pushes to `main`, `develop`, and `deploy/docker-cicd`,
 or on manual runs. Successful builds publish both `sha-<full-40-character-SHA>`
 and the legacy `sha-<7-character-SHA>` tag. The Dockerfile compiles the React
-client and publishes the API. No independent automated test suites currently
-exist; compilation alone does not prove runtime or database health. Future
-test gates must run before production promotion.
+client and publishes the API. The deployment agent's unit tests also run before
+the image build. No application test suites currently exist; compilation and
+agent tests do not prove application runtime or database health. Future test
+gates must run before production promotion.
 
 Only a successful run on `refs/heads/main` updates `production` and `latest`,
 using the exact digest returned by the build. Main runs are serialized without
@@ -281,8 +284,9 @@ run. Other branches publish SHA tags only.
 
 Rebuilding a commit can change its image and update its SHA tags. The immutable
 release identity is the **digest**. The future agent must resolve `production`
-once and deploy `IMAGE@sha256:...`, not a moving tag. The current Compose file
-uses `IMAGE:TAG`; digest support is part of the next phase.
+once and deploy `IMAGE@sha256:...`, not a moving tag. The agent supplies a
+persistent `compose.override.yml` to override the base file's `IMAGE:TAG` with
+the exact digest. The base Compose file remains usable for first-time setup.
 
 The run summary records the full SHA tag, exact digest, and promotion result.
 A green workflow means build/publication succeeded, not that the VPS deployed
@@ -309,12 +313,13 @@ the image. No new GitHub secrets are needed; CI uses `GITHUB_TOKEN` with
 
 ### 7.4 Remaining server work
 
-Implement digest-pinned Compose configuration, the deployment script, and the
-30-minute systemd timer. Include a lock, bounded network/health checks, persisted
-current/previous versions, rollback, suppression of repeated attempts for failed
-digests, pause/resume controls, and journal logs. Verify healthy deployment,
-rollback, registry outage, unchanged-version behavior, and reboot recovery before
-enabling the timer. Existing runners for other repositories remain in place.
+Install and validate the self-contained .NET tool and 30-minute systemd timer following
+[AGENT.md](AGENT.md). The agent includes digest pinning, a lock, bounded network
+and health checks, persisted current/previous versions, rollback, failed-digest
+suppression, pause/resume, and journal output through the service. Verify healthy
+deployment, rollback, registry outage, unchanged-version behavior, and reboot
+recovery on the VPS before relying on the timer. Existing runners for other
+repositories remain in place.
 
 Image rollback does not undo startup database migrations. Keep migrations
 backward compatible and back up the database before controlled deployments

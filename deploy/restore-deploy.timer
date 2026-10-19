@@ -1,0 +1,11 @@
+[Unit]
+Description=Check ReStore production every 30 minutes
+
+[Timer]
+OnBootSec=30min
+OnUnitInactiveSec=30min
+AccuracySec=30s
+Unit=restore-deploy.service
+
+[Install]
+WantedBy=timers.target
