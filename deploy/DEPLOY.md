@@ -237,26 +237,58 @@ These are real and should be handled before the site is advertised:
 
 ---
 
-## 7. Phase 2 - the CD half
+## 7. Simple pull-based deployment: progress and next steps
 
-Right now the pipeline builds and pushes, but a human runs the two commands in
-3.2. To automate that, the deploy job needs a runner that can reach this
-repository. The existing self-hosted runner is registered against
-`navidasadipur/NavidAsadipurWebsite` only, so a ReStore job would sit queued
-forever. Two options:
+The .NET Deployment Agent in `tools/ReStore.Deploy` runs Compose every
+**30 minutes**, through a systemd service and timer. It pulls the `production`
+image, updates only `app`, waits for container health, and checks the public
+products API. No inbound SSH from GitHub or additional self-hosted runner is
+needed. There is no custom state file, automatic rollback, failed-digest
+tracking, crash recovery, or generated Compose override. Rollback is manual.
 
-- **Register a second self-hosted runner for this repository** on the server,
-  as the `runner` user, which already has Docker group membership and owns
-  `/opt/restore`. Then the commented-out `deploy` job in
-  `.github/workflows/build.yml` works as written.
-- **Run the deploy job on `ubuntu-latest` and SSH to the server**, using a
-  deploy key stored as a repository secret. No runner to maintain, but it needs
-  an inbound SSH key and a repository secret.
+### Verified so far
 
-Either way the deploy command is the same two lines:
+- The operator successfully pulled the baseline as the deployment user:
+  `sudo -H -u runner docker pull ghcr.io/navidasadipur/restore:sha-51ce406`.
+- The .NET agent, tests, systemd files and instructions are prepared locally.
+- The agent and timer have not been installed or live-tested on the VPS.
 
-```bash
-cd /opt/restore
-export RESTORE_TAG=sha-<sha>
-docker compose pull app && docker compose up -d app
+The original working baseline was `sha-51ce406`, with repository digest:
+
+```text
+sha256:4aa156c35df5b757104ed772a834dc3131d410f92edd5957ea8b7a0c4bc75286
 ```
+
+### CI publication contract
+
+The workflow builds on pushes to `main`, `develop`, and `deploy/docker-cicd`,
+or manual runs. It tests the .NET deployment tools, publishes the self-contained
+Linux agent artifact, then builds and pushes the application image with full
+and legacy short commit SHA tags. Only a successful current-main run updates
+`production` and `latest`. Main runs are serialized and stale commits skip
+promotion. The summary reports the exact build digest and promotion result.
+There are no application test suites; these checks do not prove runtime health.
+
+SHA tags identify source commits but can change on rebuild; digest references
+identify exact image content. This simple agent uses the mutable production tag
+and Compose's local image handling instead of custom digest resolution/pinning.
+A failed pull does not proceed to `up`; a failed health check reports failure
+without automatic rollback. The next scheduled run can retry the same release.
+A green CI run means publication succeeded, not deployment to the VPS.
+
+### Remaining steps
+
+1. Push to `develop` and confirm the Linux tests, artifact and image build pass
+   while production is unchanged.
+2. Merge to `main` and verify production publication.
+3. Follow [AGENT.md](AGENT.md): check server prerequisites, record the current
+   image and back up the database, install the agent and set `.env` to use
+   `RESTORE_TAG=production`.
+4. Run one controlled deployment through the service and inspect the logs/API.
+5. Verify manual rollback and unchanged-image behavior, then enable the
+   30-minute timer. Use systemd to pause/resume scheduling and avoid concurrent
+   manual deployment commands. Existing runners for other repositories stay.
+
+Image rollback does not undo database migrations. Keep schema changes backward
+compatible and maintain database backups. The unit tests do not replace these
+live server checks.
