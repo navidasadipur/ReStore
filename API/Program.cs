@@ -1,12 +1,16 @@
 using System.Text;
+using System.Text.Json;
 using API.Data;
 using API.Entities;
 using API.Middleware;
+using API.Mcp;
 using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -15,6 +19,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithTools<ProductMcpTools>();
 builder.Services.AddAutoMapper(typeof(MappingProfiles).Assembly);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -51,6 +59,11 @@ builder.Services.AddDbContext<StoreContext>(opt =>
 {
     opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["app"])
+    .AddDbContextCheck<StoreContext>("postgresql", tags: ["db"]);
 
 builder.Services.AddCors();
 
@@ -131,6 +144,34 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapMcp("/mcp").AllowAnonymous();
+app.MapHealthChecks("/health/app", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("app"),
+    ResponseWriter = WriteHealthCheckResponse
+}).AllowAnonymous();
+app.MapHealthChecks("/health/db", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("db"),
+    ResponseWriter = WriteHealthCheckResponse
+}).AllowAnonymous();
 app.MapFallbackToController("Index", "Fallback");
 
 await app.RunAsync();
+
+static async Task WriteHealthCheckResponse(HttpContext httpContext, HealthReport report)
+{
+    httpContext.Response.ContentType = "application/json";
+
+    await JsonSerializer.SerializeAsync(httpContext.Response.Body, new
+    {
+        status = report.Status.ToString(),
+        checks = report.Entries.Select(entry => new
+        {
+            name = entry.Key,
+            status = entry.Value.Status.ToString(),
+            durationMs = Math.Round(entry.Value.Duration.TotalMilliseconds, 2),
+            description = entry.Value.Description
+        })
+    });
+}
