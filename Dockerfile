@@ -35,7 +35,7 @@ RUN BUILD_PATH=build GENERATE_SOURCEMAP=false CI=false npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 - build and publish the API
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:7.0 AS api-build
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS api-build
 
 WORKDIR /src
 
@@ -50,12 +50,12 @@ RUN dotnet publish API/API.csproj -c Release -o /app/publish --no-restore
 # ---------------------------------------------------------------------------
 # Stage 3 - runtime
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:7.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 
 WORKDIR /app
 
-# The .NET 7 base images still ship no non-root user (that arrived in .NET 8),
-# so create one. Port 8080 is above 1024 and therefore bindable without root.
+# Preserve the application's existing non-root UID across image upgrades.
+# Port 8080 is above 1024 and therefore bindable without root.
 # Deliberately no `apt-get install`: the image already has bash and adduser,
 # and the healthcheck below uses bash's /dev/tcp, so the build never depends on
 # an external Debian mirror being in sync.

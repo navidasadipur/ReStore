@@ -28,8 +28,18 @@ View a demo of this app here:
 
 API using:
 
+Building the API locally requires the .NET 9 SDK:
+
+```sh
+dotnet restore API/API.csproj
+dotnet build API/API.csproj --configuration Release
+```
+
+The Dockerfile builds and runs the API with .NET 9 images. Deployment tools
+under `tools/` continue to target .NET 8 independently.
+
 <ul>
-<li>.net 7</li>
+<li>.NET 9</li>
 <li>ASPNET Core Identity(JWT type)</li>
 <li>AutoMapper</li>
 </ul>
