@@ -28,8 +28,32 @@ View a demo of this app here:
 
 API using:
 
+Building the API locally requires the .NET 9 SDK:
+
+```sh
+dotnet restore API/API.csproj
+dotnet build API/API.csproj --configuration Release
+```
+
+The Dockerfile builds and runs the API with .NET 9 images. Deployment tools
+under `tools/` continue to target .NET 8 independently.
+
+### MCP products endpoint
+
+The API exposes an unauthenticated MCP endpoint at `/mcp`. The first version
+provides these product tools: `list_products`, `get_product`,
+`get_product_filters`, `create_product`, `update_product`, and
+`delete_product`. Product creation and updates do not upload images; updates
+keep the product's current image.
+
+### Health checks
+
+`GET /health/live` checks that the API process is running. `GET /health/ready`
+also checks that `StoreContext` can connect to PostgreSQL. Both endpoints return
+JSON and are available without authentication.
+
 <ul>
-<li>.net 7</li>
+<li>.NET 9</li>
 <li>ASPNET Core Identity(JWT type)</li>
 <li>AutoMapper</li>
 </ul>

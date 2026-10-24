@@ -39,7 +39,7 @@ Caddy (ports 80/443, container "caddy", project /opt/personal-site)
    |
    |  network: restore-net
    v
-restore-app:8080          <- one container: React static files + .NET 7 API
+restore-app:8080          <- one container: React static files + .NET 9 API
    |
    |  network: restore-net
    v

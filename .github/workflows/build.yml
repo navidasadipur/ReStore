@@ -42,10 +42,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up .NET for deployment tools
+      - name: Set up .NET for API and deployment tools
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Build .NET 9 API
+        run: dotnet build API/API.csproj --configuration Release
 
       - name: Test deployment agent
         run: dotnet test tools/ReStore.Deploy.Tests/ReStore.Deploy.Tests.csproj --configuration Release
