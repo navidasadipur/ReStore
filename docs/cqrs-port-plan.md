@@ -303,6 +303,97 @@ Controllers keep their EF code verbatim; only the `using` lines change
 - `client` still builds against the new `BUILD_PATH`.
 - `docker compose up --build` (local stack) serves the SPA.
 
+### 4.5 Phase 0 — executed (result log)
+
+Branch `develop` at `543df08`, working tree not committed.
+
+**Structure now (7 projects in `ReStore.sln`):**
+
+| Project | TFM | Contents |
+| --- | --- | --- |
+| `SourceApi/ReStore.Domain` | net9.0 | `Entities/` (12 files, incl. `OrderAggregare/`), `Microsoft.Extensions.Identity.Stores` only |
+| `SourceApi/ReStore.Application` | net9.0 | empty shell + MediatR 13.1.0 (kernel lands in Phase 1) |
+| `SourceApi/ReStore.Infrastructure` | net9.0 | `Persistence/` (StoreContext, DbInitializer, 7 migration files), Mapster/Redis/MassTransit/EF/Npgsql packages |
+| `SourceApi/ReStore.Api` | net9.0 | was `API/`; controllers, DTOs, extensions, MCP, middleware, services, `wwwroot`, appsettings, UserSecretsId preserved |
+| `Test/ReStore.Test` | net9.0 | xunit + FluentAssertions + Moq + Sqlite; 8 tests |
+| `tools/ReStore.Deploy`, `tools/ReStore.Deploy.Tests` | net8.0 | untouched |
+
+**Namespace rewrite:** two passes, 220 references —
+`API.Entities*` → `ReStore.Domain.Entities*` and
+`API.Data*` → `ReStore.Infrastructure.Persistence*` (163 refs / 36 files), then
+`API.Controllers`, `API.DTOs`, `API.Extensions`, `API.Mcp`, `API.Middleware`,
+`API.RequestHelpers`, `API.Services` → `ReStore.Api.*` (57 refs / 33 files).
+A Persian `[Description]` string in `ProductMcpTools` that happens to contain the
+word "API" was deliberately left untouched.
+
+**Deviations from the plan, all deliberate:**
+
+1. **Resolved:** the web project's `API.*` namespaces were swept to
+   `ReStore.Api.*` as a separate step after the move, so the project name and
+   its namespaces now agree.
+2. `[Owned]` on `ShippingAddress` and `ProductItemOrdered` could not survive:
+   `Microsoft.EntityFrameworkCore` is not referenced by `ReStore.Domain`, which
+   is the whole point of that project. Ownership moved to fluent
+   `builder.Entity<Order>().OwnsOne(...)` / `builder.Entity<OrderItem>().OwnsOne(...)`
+   in `StoreContext.OnModelCreating`, and proven schema-neutral by the probe in
+   the gates below.
+3. The test project was created in Phase 0 (it was Phase 1 item 16) so that the
+   move itself had an executable gate.
+4. Solution folders `SourceApi` and `Tests` were added for the new projects;
+   `Build .NET 9 API` in `build.yml` gained a `Test API kernel` step, because CI
+   previously had no application test gate at all.
+5. `.vscode/launch.json` also had a stale net7.0 program path; fixed to net9.0
+   while repointing it.
+
+**Gates — all passed:**
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build ReStore.sln -c Release` | succeeded, 0 errors, no new warnings (the ~60 CS86xx warnings are pre-existing in untouched controllers/DTOs) |
+| `dotnet ef migrations list` | exactly `20230515130717_PostGresInitial`, `20230531143443_makePictureUrlNullable`, `20230603090725_PublicIdAdded` |
+| EF wants no new migration? | **Yes.** `dotnet ef migrations add Phase0Probe` produced a migration with empty `Up` **and** `Down`; probe deleted and the snapshot restored to byte-identical (`SHA256 7EEE85A8…`) |
+| `dotnet test Test/ReStore.Test` | 8/8 pass — migration IDs, migration namespace/assembly, snapshot tables, baseline `CreateTable` set, runtime-vs-snapshot **table-set parity**, both owned navigations still owned and stored in the owner's table, and `ReStore.Domain` has no EF reference |
+| App starts and serves | `/health/app` 200 Healthy · `/api/orders` 401 · `/swagger/v1/swagger.json` 200 (27 KB, all controllers discovered) · `/` 200 (SPA `index.html` from the moved `wwwroot`) · `/api/buggy/bad-request` 400 · `/api/products` 500 (no database, as expected) |
+
+**Discovered along the way (pre-existing, not caused by the move):** the
+snapshot was generated under EF 7 and names owned types
+`Owner.Navigation#ClrType`, while the EF 9 runtime model uses the plain CLR
+name. The empty probe migration proves EF does not care; the snapshot was left
+untouched rather than "fixed".
+
+**Not verifiable in this environment** — run these on your machine:
+
+```bash
+# the four documented smoke checks need Postgres
+docker compose up -d db
+dotnet run --project SourceApi/ReStore.Api -c Release
+curl -i http://localhost:5000/api/products          # 18 products + Pagination header
+curl -X POST http://localhost:5000/api/account/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"Pa$$w0rd"}'  # JWT
+curl -i http://localhost:5000/api/orders             # 401
+
+# the Dockerfile changed the most, so build the image once
+docker compose build app
+
+# client now writes into SourceApi/ReStore.Api/wwwroot
+cd client && npm run build
+```
+
+Sandbox notes: MSBuild's node reuse fails here (`-m:1 -nodeReuse:false`
+needed), Docker's engine socket and the VSTest host are blocked by named-pipe
+restrictions, and NuGet's feeds are unreachable (all packages came from the
+local cache). None of these affect CI or a normal machine.
+
+**Leftovers — resolved:** `store.db` moved to
+`SourceApi/ReStore.Api/store.db` (still git-ignored via `**/*.db`),
+`API/API.csproj.user` deleted, and the emptied `API/` folder removed. No stale
+`API/` path remains in the tree.
+
+**Re-verified after the namespace sweep:** build 0 errors, 8/8 tests, and an
+identical runtime smoke (`/health/app` 200, `/api/orders` 401, Swagger 200,
+`/` 200, `/api/buggy/bad-request` 400).
+
 ---
 
 ## 5. Phase 1 — the shared kernel (this pass ends here)

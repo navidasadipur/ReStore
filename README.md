@@ -31,8 +31,8 @@ API using:
 Building the API locally requires the .NET 9 SDK:
 
 ```sh
-dotnet restore API/API.csproj
-dotnet build API/API.csproj --configuration Release
+dotnet restore SourceApi/ReStore.Api/ReStore.Api.csproj
+dotnet build SourceApi/ReStore.Api/ReStore.Api.csproj --configuration Release
 ```
 
 The Dockerfile builds and runs the API with .NET 9 images. Deployment tools
