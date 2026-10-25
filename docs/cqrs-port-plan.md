@@ -15,20 +15,20 @@ handlers, a generic repository pair over a `RequestConfig`, per-entity
 | # | Decision | Consequence |
 | --- | --- | --- |
 | D1 | **Envelope-only responses, always 200.** Actions return `InsertReturn` / `PaginatedResponseListDto<Dto>` / `DtoReturnOne<Dto>`; errors travel in the body via `Result`/`Error`. | The React client (`client/src/app/api/agent.ts`) will need a later frontend phase. Nothing breaks during the kernel phase, because no controller is migrated yet. |
-| D4 | **Mirror AccountsApi's layout**: `SourceApi/ReStore.Api`, `SourceApi/ReStore.Domain`, `Source/ReStore.Application`, `Source/ReStore.Infrastructure`, `Test/ReStore.Test`. | `Dockerfile`, `build.yml`, `.dockerignore`, `client/.env.production`, `.vscode/*.json`, solution and deploy docs all need path edits. See §7. |
+| D4 | **Mirror AccountsApi's layout**: `SourceApi/ReStore.Api`, `SourceApi/ReStore.Domain`, `SourceApi/ReStore.Application`, `SourceApi/ReStore.Infrastructure`, `Test/ReStore.Test`. | `Dockerfile`, `build.yml`, `.dockerignore`, `client/.env.production`, `.vscode/*.json`, solution and deploy docs all need path edits. See §7. |
 | D8 | **First pass stops at the shared kernel.** Three libraries + test project + base handlers + generic repositories + Controls + Mapster wiring. No controller is converted to CQRS yet. | The kernel is only proven by tests in this phase; Phase 2 (Products) must follow promptly or it rots. |
-
-Still my recommendation, not yet decided (cheap to change):
-- **D2** Mapster replaces AutoMapper (recommended). During the kernel phase `TypeAdapterConfig` is registered *alongside* AutoMapper, so nothing breaks.
-- **D5** Messages in **English** (recommended) rather than Persian — ReStore's UI is English.
-- **D6** Base handlers use **constructor injection** instead of `IIocContainers` service locator (recommended). Pipeline and hooks stay identical.
-- **D7** Keep the `ChangeFields` partial-update plumbing (recommended; costs nothing).
+| D2 | **Mapster replaces AutoMapper.** During the kernel phase `TypeAdapterConfig` is registered *alongside* AutoMapper; AutoMapper is removed in the last phase. | `API/RequestHelpers/MappingProfiles.cs` and the `IMapper` usages get rewritten at slice time. |
+| D5 | **No message-language rule.** The instruction is deleted: each message is written in whatever language fits the feature. Kernel messages are English; feature phases decide case by case. | Deviation 1 is withdrawn — no enforced convention either way. |
+| D6 | **Base handlers use constructor injection** instead of the `IIocContainers` service locator. | Behaviour-neutral — see §5.10 for the one lifetime caveat. Pipeline and `virtual` hooks unchanged. |
+| D7 | **`ChangeFields` partial-update plumbing is kept.** | `BaseUpdateCommand.ChangeFields` and the `Controls.CheckOnUpdate` filter stay, even though ReStore's forms currently send every column. |
+| D9 | **Redis and RabbitMQ come in now — as fail-soft seams with a commented registration.** Interfaces + real adapters + settings exist in code; the real adapters are *not* DI-registered. No-op implementations are registered in their place. | Nothing connects anywhere; the app cannot fail because the servers are missing. See §9 for the switch-on runbook. |
 
 ---
 
 ## 1. What AccountsApi's architecture actually is
 
-Seven mechanisms, in the order a request meets them.
+Seven mechanisms, in the order a request meets them. §1.8 then answers the
+obvious objection ("we don't have Redis/Elastic/Vault/Keycloak installed").
 
 ### 1.1 Controller is a one-liner
 ```csharp
@@ -115,6 +115,70 @@ Redis/Elastic/MassTransit, every repository, every control.
 `IIocContainers` is a service locator (`_ioc.CreateObject<T>()`) that the base
 handlers use instead of constructor injection.
 
+### 1.8 Which of these are load-bearing, and which are decoration
+
+Answering the obvious objection: **Redis, Elastic, Vault, Keycloak, RabbitMQ and
+Seq are not installed here, and none of them is needed to port this
+architecture.** But they are not equally removable *from the upstream code*, so
+it matters where each one sits.
+
+A grep of `Handlers/BaseHandlers/*.cs` for `_ioc.CreateObject<T>()` returns 13
+services that the six base handlers resolve **by name**:
+
+| Service | Refs | Backing | ReStore |
+| --- | --- | --- | --- |
+| `IMessageBroker` | 6 | MassTransit + RabbitMQ | dropped — the worst offender, it is in the constructor *and* awaited in `finally` |
+| `IMapperCustome` | 5 | Mapster | **kept** (kernel) |
+| `IOpLogger` | 5 | Serilog/Seq wrapper | reduced to `ILogger` |
+| `ISessionInfoReader` | 5 | JWT/`HttpContext` claims | replaced by `IBuyerIdentity` + `IIdentityService` (later phases) |
+| `IExpressionMethods` | 4 | pure reflection/LINQ helpers | re-implemented if needed, no infra |
+| `IDebuggerHelper` | 4 | in-memory debug list | dropped |
+| `IShardCache` | 3 | **Redis** (`IDataCache`) | dropped with the whole account-expiry concept — ReStore has no subscriptions |
+| `IMessCache` | 3 | **database** table `SysMessEntity` (Persian error texts) | dropped with the Persian messages |
+| `IRequestHelper` | 3 | request-log wrapper | dropped (deviation 6) |
+| `IInsert/Update/Delete/QueryMetrics` | 4 | Prometheus counters | dropped |
+
+Everything else on the external-infrastructure list is *not* on the kernel path:
+
+| Dependency | Where it actually is upstream | Blocks the port? |
+| --- | --- | --- |
+| **Vault** (`VaultSharp`) | `Program.cs` — a hard startup dependency: `new SettingReader(url, token)` must succeed or the app throws, and `Setting.Instance` is read everywhere | No. ReStore already loads from `appsettings` + env vars; we port nothing from here |
+| **Keycloak** (`IIdsManagment`) | only concrete *feature* handlers (`Account`, `Person`, `Branch`, `Logout`) — never the base handlers. In `BranchCommandHandlers` it is even assigned to an unused `var ids` | No. ReStore uses ASP.NET Identity + its own `TokenService` |
+| **Redis** | `DataCache` (`IDatabase`), and through it `ShardCache` / `CounterCache` / `UserInfoCache` | No, once `IShardCache` is gone (§1.8 table above) |
+| **Elasticsearch** | exactly one live call, `GoodsQueryHandlers.cs:47` (the `GoodsCommandHandlers` call is commented out) | No |
+| **Seq / OpenObserve** | `IocSetting.AddService` logging sink | No — standard `ILogger` works |
+| **Prometheus** | in-process counters + `UseMetricServer()`; **no server required** | No |
+| Refit, AWSSDK.S3, CsvHelper, YamlDotNet, ImageSharp, Kavenegar | feature-specific (Moadian API, exports, SMS OTP) | No |
+
+**So the kernel's dependency set is six packages and zero required servers:**
+
+| Project | Packages |
+| --- | --- |
+| `ReStore.Domain` | `Microsoft.Extensions.Identity.Stores` (for `User : IdentityUser<int>`, `Role : IdentityRole<int>`) |
+| `ReStore.Application` | `MediatR` 13.1.0 |
+| `ReStore.Infrastructure` | `Mapster` 7.4.0, `Mapster.DependencyInjection` 1.0.1, `System.Linq.Dynamic.Core` 1.7.1, `Microsoft.EntityFrameworkCore` (+ `.Sqlite`), **`StackExchange.Redis` 2.10.1**, **`MassTransit` 8.5.7 + `MassTransit.RabbitMQ` 8.5.7** — Npgsql already comes from the web project |
+| `ReStore.Test` | `xunit`, `FluentAssertions`, `Moq` |
+
+Everything runs against the local Postgres/SQLite that ReStore already uses.
+The two infrastructure packages are the ones you asked to keep (D9): they are
+referenced and their adapters are written, but **no code path connects to Redis
+or RabbitMQ** — see §9.
+
+The shape that makes this cheap is `interface-in-Application,
+implementation-in-Infrastructure`. Upstream uses it to bind itself to Vault,
+Redis and RabbitMQ; we use the same seam in the opposite direction: the
+interface is ready, the adapter is written, the registration is a comment. When
+the server grows the two services, switching on is four uncommented lines and
+two settings keys — no handler, command or DTO changes.
+
+The one trap worth naming: **do not copy the base handlers verbatim.** The
+*pipeline* and the *hook set* are what we copy; the 13 `CreateObject<T>()` calls
+are what we strip. Copying `BaseAddCommandHandler.cs` as-is drags MassTransit,
+Redis, Seq and Prometheus into a project that must build without them. By
+contrast the two generic repositories (§5.12) really can be copied almost
+verbatim — their only infrastructure coupling is the `IDebuggerHelper` and the
+`IIocContainers` constructor.
+
 ---
 
 ## 2. Gap table
@@ -141,8 +205,9 @@ handlers use instead of constructor injection.
 
 ```
 D:\Learn\ReStore\
-  ReStore.sln                       5 projects: 4 new + ReStore.Deploy pair
-  Source/
+  ReStore.sln                       7 projects: ReStore.Api + 3 libraries
+                                    + ReStore.Test + the 2 deploy tools
+  SourceApi/
     ReStore.Api/                    # was API/
       ReStore.Api.csproj            # keeps UserSecretsId 034ef10d-…
       Program.cs  appsettings*.json  Properties/  wwwroot/
@@ -173,7 +238,7 @@ D:\Learn\ReStore\
 ```
 
 `client/.env.production` must point `BUILD_PATH` at
-`../Source/ReStore.Api/wwwroot`.
+`../SourceApi/ReStore.Api/wwwroot`.
 
 ---
 
@@ -185,11 +250,11 @@ DbContext while it still lives in the web project.
 ### 4.1 File moves
 | From | To |
 | --- | --- |
-| `API/Entities/**` (10 files) | `Source/ReStore.Domain/Entities/**`, namespace `API.Entities*` → `ReStore.Domain.Entities*` |
-| `API/Data/StoreContext.cs` | `Source/ReStore.Infrastructure/Persistence/` |
-| `API/Data/DbInitializer.cs` | `Source/ReStore.Infrastructure/Persistence/` |
-| `API/Data/Migrations/**` (7 files) | `Source/ReStore.Infrastructure/Persistence/Migrations/`, namespace `API.Data.Migrations` → `ReStore.Infrastructure.Persistence.Migrations` |
-| everything else under `API/` | `Source/ReStore.Api/`, `API.csproj` → `ReStore.Api.csproj` |
+| `API/Entities/**` (10 files) | `SourceApi/ReStore.Domain/Entities/**`, namespace `API.Entities*` → `ReStore.Domain.Entities*` |
+| `API/Data/StoreContext.cs` | `SourceApi/ReStore.Infrastructure/Persistence/` |
+| `API/Data/DbInitializer.cs` | `SourceApi/ReStore.Infrastructure/Persistence/` |
+| `API/Data/Migrations/**` (7 files) | `SourceApi/ReStore.Infrastructure/Persistence/Migrations/`, namespace `API.Data.Migrations` → `ReStore.Infrastructure.Persistence.Migrations` |
+| everything else under `API/` | `SourceApi/ReStore.Api/`, `API.csproj` → `ReStore.Api.csproj` |
 | — | new: `ReStore.Domain.csproj`, `ReStore.Application.csproj`, `ReStore.Infrastructure.csproj`, `ReStore.Test.csproj` |
 
 Use `git mv` for these when the work is executed, so history follows.
@@ -197,25 +262,25 @@ Use `git mv` for these when the work is executed, so history follows.
 ### 4.2 Editing the solution and configs
 - `ReStore.sln`: rewrite the `API` project entry to the new path, add the three
   libraries + the test project.
-- `Dockerfile`: `COPY API/API.csproj API/` → copy *all* `Source/*/*.csproj` and
-  `dotnet restore Source/ReStore.Api/ReStore.Api.csproj`; `COPY API/ API/` →
-  `COPY Source/ Source/` (the publish stage needs the referenced projects too);
-  `dotnet publish Source/ReStore.Api/ReStore.Api.csproj`;
+- `Dockerfile`: `COPY API/API.csproj API/` → copy *all* `SourceApi/*/*.csproj` and
+  `dotnet restore SourceApi/ReStore.Api/ReStore.Api.csproj`; `COPY API/ API/` →
+  `COPY SourceApi/ SourceApi/` (the publish stage needs the referenced projects too);
+  `dotnet publish SourceApi/ReStore.Api/ReStore.Api.csproj`;
   `ENTRYPOINT ["dotnet","ReStore.Api.dll"]`.
-- `build.yml`: `dotnet build API/API.csproj` → `Source/ReStore.Api/ReStore.Api.csproj`;
+- `build.yml`: `dotnet build API/API.csproj` → `SourceApi/ReStore.Api/ReStore.Api.csproj`;
   add a step running `Test/ReStore.Test` once it exists (CI has no application
   test gate today — this is the moment to add one).
-- `.dockerignore`: `API/wwwroot` → `Source/ReStore.Api/wwwroot`.
-- `client/.env.production`: `BUILD_PATH=../API/wwwroot` → `../Source/ReStore.Api/wwwroot`.
+- `.dockerignore`: `API/wwwroot` → `SourceApi/ReStore.Api/wwwroot`.
+- `client/.env.production`: `BUILD_PATH=../API/wwwroot` → `../SourceApi/ReStore.Api/wwwroot`.
 - `.vscode/tasks.json` (3 entries) and `.vscode/launch.json`: repoint to
-  `Source/ReStore.Api/ReStore.Api.csproj`; the `program` path is also stale
+  `SourceApi/ReStore.Api/ReStore.Api.csproj`; the `program` path is also stale
   (`API/bin/Debug/net7.0/API.dll`) — fix to net9.0 while there.
 - `docker-compose.yml` (env vars only — no path change), `deploy/DEPLOY.md`,
   `README.md`, `deploy/AGENT.md`: prose references to `API/…` need updating.
 - `artifacts/` is **untracked local scratch** (`git ls-files artifacts` is
   empty; it holds `dotnet-ef` 9.0.11 under `artifacts/ef-tools` and a published
   `api-net9/` snapshot). No git action needed; local `dotnet ef` invocations
-  become `--project Source/ReStore.Infrastructure --startup-project Source/ReStore.Api`.
+  become `--project SourceApi/ReStore.Infrastructure --startup-project SourceApi/ReStore.Api`.
 - `API/appsettings.json` + `API/appsettings.Development.json` are **tracked**;
   they move with the web project unchanged.
 
@@ -226,7 +291,7 @@ Controllers keep their EF code verbatim; only the `using` lines change
 
 ### 4.4 Gate for Phase 0
 - `dotnet build ReStore.sln -c Release` succeeds.
-- `dotnet ef migrations list --project Source/ReStore.Infrastructure --startup-project Source/ReStore.Api`
+- `dotnet ef migrations list --project SourceApi/ReStore.Infrastructure --startup-project SourceApi/ReStore.Api`
   lists exactly `20230515130717_PostGresInitial`,
   `20230531143443_makePictureUrlNullable`, `20230603090725_PublicIdAdded`.
 - A fresh Postgres container applies those three, and no
@@ -275,6 +340,26 @@ namespaces and Iranian-specific bits removed.
     `virtual` hook set stay identical. Uses constructor injection (D6); the
     metrics / debugger / request-log / message-bus steps become a single
     optional `IAppLogger` call or are dropped (deviation 6 in §6).
+    **These six are edited, not copied** — see §1.8: a verbatim paste pulls
+    MassTransit, Redis, Seq and Prometheus into a project that must build
+    without any of them.
+
+    *Why constructor injection is behaviour-neutral (D6).* Upstream's
+    `_ioc.CreateObject<T>()` is a `GetRequiredService` on the same container,
+    so the resolved instance and its lifetime are identical either way. The only
+    three differences are: (a) upstream resolves a few services *inside* a
+    method rather than at construction, which matters only for services used on
+    rare paths — all of those (`IMessCache`, `IOpLogger`, `IShardCache`) are
+    dropped here; (b) `CreateObject` also calls `SetInitializable` for
+    `IInitializable`, an interface ReStore will not have; (c) the single
+    string-based lookup — `[CheckKeyExists]` resolving `c.Attr.RepoName` — has
+    no equivalent and becomes a hard-coded `typeof(...)`, i.e. stricter, not
+    different. **The one real caveat:** every lifetime must be registered
+    explicitly because nothing can be resolved lazily by name. Concretely:
+    repositories and `IControls<>` are `Scoped`, `IMapper` (Mapster
+    `ServiceMapper`) is `Scoped`, `ICache`/`IMessageBus` are `Singleton`. Get a
+    lifetime wrong and the symptom is a captured `StoreContext` / "second
+    operation on this context" error rather than a missing registration.
 
 **Infrastructure**
 11. `Persistence/StoreContext.cs` + `DbInitializer.cs` (moved in Phase 0).
@@ -308,10 +393,72 @@ namespaces and Iranian-specific bits removed.
     - one `UpdateReturn`/`InsertReturn` failure path proving `Result=Failed`
       and no exception escapes.
 
+**Integration seams for Redis + RabbitMQ (D9)** — present, wired, and inert.
+
+17. `Application/Interfaces/ICache.cs` — never throws; every method reports
+    availability in its return value:
+    ```csharp
+    Task<T?> GetAsync<T>(string key, CancellationToken ct = default);
+    Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken ct = default);
+    Task RemoveAsync(string key, CancellationToken ct = default);
+    Task<bool> IsAvailableAsync(CancellationToken ct = default);
+    ```
+18. `Application/Interfaces/IMessageBus.cs` — same rule:
+    `Task<bool> PublishAsync<T>(T message, CancellationToken ct = default)` where
+    `false` means "not delivered, already logged", never an exception.
+19. `Application/Common/InfrastructureSettings.cs` — `RedisSettings`
+    (`Configuration`, default `"localhost:6379"`, `InstanceName`, `Enabled = false`)
+    and `RabbitMqSettings` (`Host`, `VirtualHost`, `Username`, `Password`,
+    `Enabled = false`). `Enabled` is the *second* gate, so even an uncommented
+    registration stays inert until the flag flips.
+20. `Infrastructure/Caching/` — `NullCache : ICache` (all no-ops, returns
+    `false`/`null`, logs nothing) and `RedisCacheService : ICache`.
+    The Redis adapter is written to the fail-soft contract:
+    - `IConnectionMultiplexer` is created **lazily** on first use, never in the
+      constructor, with `AbortOnConnectFail = false`, a short
+      `ConnectTimeout`/`SyncTimeout` and `ConnectRetry = 3`;
+    - every operation is wrapped in `try/catch (Exception)` → log a single
+      warning on the transition to unavailable, return cache-miss (`null`/`false`);
+    - nothing is retried in a loop, so an outage costs one log line per call, not
+      a hang. Compare with upstream `DataCachSetting._db` — a `static IDatabase[]`
+      populated at startup, which throws if Redis is absent. Do not copy that.
+21. `Infrastructure/Messaging/` — `NullMessageBus : IMessageBus` (logs at
+    `Debug`, returns `false`) and `RabbitMqMessageBus : IMessageBus`.
+    The RabbitMQ adapter deliberately does **not** use MassTransit's hosted
+    service (`AddMassTransit` + `AddBus` starts the bus during `IHost.StartAsync`
+    and will fail host startup if the broker is unreachable — exactly the
+    exception you do not want). Instead the bus is built and started on first
+    publish inside a `try/catch`, with a bounded start timeout; a failure is
+    logged and the instance is discarded so the next publish retries. Startup
+    therefore has zero broker dependency even when the adapter is switched on.
+22. `Infrastructure/IoC/ServiceRegistration.cs` — registers the seams **today**:
+    ```csharp
+    services.Configure<RedisSettings>(configuration.GetSection("Redis"));
+    services.Configure<RabbitMqSettings>(configuration.GetSection("RabbitMq"));
+    services.AddSingleton<ICache, NullCache>();          // no-op, never throws
+    services.AddSingleton<IMessageBus, NullMessageBus>(); // no-op, never throws
+
+    // TODO(server): install Redis + RabbitMQ, then swap the two lines above for:
+    // services.AddSingleton<ICache, RedisCacheService>();
+    // services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
+    ```
+    Handlers from Phase 2 onward may therefore depend on `ICache`/`IMessageBus`
+    immediately; they get no-ops until the swap, and cache-miss/degraded
+    behaviour after it if the servers are down — never a 500.
+23. `appsettings.json` — add the two sections with `"Enabled": false` and empty
+    credentials. `deploy/.env.example` and `deploy/DEPLOY.md` get a short
+    "when Redis/RabbitMQ are installed, set these four variables" note.
+24. Tests: `NullCache`/`NullMessageBus` never throw; `RedisCacheService`
+    returns a cache-miss (not an exception) when constructed against an
+    unreachable endpoint. That last test is the guarantee behind "can't throw".
+
 ### Definition of done for Phase 1
 - Solution builds in Release with no new warnings.
-- The app still runs from `Source/ReStore.Api` and every endpoint behaves
+- The app still runs from `SourceApi/ReStore.Api` and every endpoint behaves
   exactly as in Phase 0 (kernel is additive).
+- The app starts and serves normally **with no Redis and no RabbitMQ on the
+  machine** — trivially true while the registration is commented, and asserted
+  by the two seam tests in item 24.
 - `Test/ReStore.Test` green, CI runs it.
 - `docs/cqrs-port-plan.md` §5 checked off; Phase 2 (Products) queued.
 
@@ -327,7 +474,8 @@ namespaces and Iranian-specific bits removed.
 | 4 | `CommandAccountsDbContext` + `QueryAccountsDbContext` | one `StoreContext` | no read replica |
 | 5 | `UnitOfWork` | not ported | commented out upstream too |
 | 6 | `IDebuggerHelper`, `IMetrics`, `IRequestHelper`, `IOpLogger`, message bus, `EntityChangeEntry` | dropped in v1 | each is a subsystem; add after the slices are green |
-| 7 | Vault, Serilog/Seq, Prometheus, Redis, Elastic, MassTransit, Refit, S3 | not ported | not needed here |
+| 7 | Vault, Serilog/Seq, Prometheus, Elastic, Refit, S3, Kavenegar | not ported | no ReStore use case |
+| 7b | Redis via `IDataCache` + `static IDatabase[]`; RabbitMQ via MassTransit hosted service | **packaged and adapted now, registered later** (D9) — `NullCache`/`NullMessageBus` are what DI hands out | you want both eventually, but neither may ever throw or block startup |
 | 8 | Application files declaring `namespace AccountsApi.Infrastructure.Helppers` | clean namespaces | the layering should be honest |
 | 9 | `BaseEntity.CommandRepo4Log()` abstract | omitted | reflection into every entity for an unported subsystem |
 | 10 | `ExportInfo` / `MoveData` in `BaseQuery` | omitted | no Excel export, no record navigation |
@@ -356,7 +504,7 @@ baseline migration.
 ### 7.3 Build and deploy coupling
 Every path edit is enumerated in §4.2. The most easily missed one: the
 Dockerfile publish stage currently copies only `API/`, which will not contain
-the referenced projects any more — it must copy `Source/`.
+the referenced projects any more — it must copy `SourceApi/`.
 
 ### 7.4 The projection trick is compile-invisible
 `MapAnonymous<Entity>` maps partial anonymous projections back onto entities by
@@ -385,10 +533,71 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 6 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
 | 7 | API shell | `Program.cs` slims; the envelope→HTTP decision (D1) lands here together with the client update |
 | 8 | Docs | `README.md` API section, `docs/architecture.md` |
+| 9 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
 
 ---
 
-## 9. What I will not touch
+## 9. Deferred infrastructure — the switch-on runbook
+
+Redis and RabbitMQ are **packaged, adapted and inert** after Phase 1 (D9). This
+is what "inert" is guaranteed to mean, and what to do when the server is ready.
+
+### 9.1 The invariant
+
+> No request may fail because Redis or RabbitMQ is unavailable, and neither may
+> delay startup.
+
+Concretely, three separate gates have to open before a single byte is sent:
+
+1. the `ICache`/`IMessageBus` registration is uncommented (§5.22);
+2. `Redis:Enabled` / `RabbitMq:Enabled` is `true`, otherwise the adapter itself
+   short-circuits to the no-op path;
+3. the adapter's lazy connect succeeds. If it does not: one warning log, and the
+   caller sees a cache-miss (`null`) or `PublishAsync == false` — never an
+   exception, never a retry storm.
+
+The adapters therefore deliberately avoid the two upstream patterns that break
+this invariant: `DataCachSetting`'s `static IDatabase[]` filled at startup, and
+MassTransit's hosted bus (`AddBus` starts during `IHost.StartAsync` and fails
+host startup when the broker is down).
+
+### 9.2 Switching on
+
+1. Add the two services to the server stack (`deploy/compose.yml`, following the
+   existing `db` service pattern), and to the local `docker-compose.yml` if you
+   want to exercise them locally.
+2. Set the four variables in `deploy/.env`:
+   `Redis__Configuration`, `Redis__Enabled=true`,
+   `RabbitMq__Host`, `RabbitMq__Enabled=true` (plus credentials if they are not
+   the defaults).
+3. Uncomment the two `AddSingleton` lines in `ServiceRegistration` (§5.22).
+4. Redeploy. Nothing else changes — no handler, command, query or DTO.
+
+### 9.3 Verification (do this with the servers *stopped* first)
+
+- With `Enabled=false` and the registration uncommented: app starts, endpoints
+  normal, no connection attempt in the logs.
+- With `Enabled=true` and Redis/RabbitMQ stopped: app still starts, endpoints
+  still return 200, logs contain exactly one warning per adapter. Nothing 500s.
+- With `Enabled=true` and the servers running: a `Set`/`Get` round-trip works and
+  a published message is visible in the RabbitMQ management UI.
+- Health checks: if you add `AspNetCore.HealthChecks.Redis` /
+  `...Rabbitmq`, register them under a **new tag** (e.g. `deps`) and do *not*
+  add those tags to `/health/db`'s predicate — otherwise the existing readiness
+  probe starts reporting unhealthy because a cache is down, which is exactly the
+  coupling this design avoids.
+
+### 9.4 First real consumer
+
+Best first use once switched on: `ProductFiltersQuery` (brands/types distinct
+lists — cheap to cache, invalidated on product write) and an
+`OrderCreatedMessage` published from `CreateOrderCommand`. Both are Phase 2/4
+work, so the seams will have a real consumer by then rather than staying
+speculative.
+
+---
+
+## 10. What I will not touch
 
 - `client/` — no frontend changes in this pass.
 - `tools/ReStore.Deploy*`, `deploy/compose.yml` (image-based, path-free) —
