@@ -553,6 +553,63 @@ namespaces and Iranian-specific bits removed.
 - `Test/ReStore.Test` green, CI runs it.
 - `docs/cqrs-port-plan.md` §5 checked off; Phase 2 (Products) queued.
 
+### 5.1 Phase 1 — executed (result log)
+
+37 files, ~2,670 lines: Domain 7, Application 19, Infrastructure 11. Plus 40
+tests in 3 test files. Working tree not committed.
+
+| Project | What now exists |
+| --- | --- |
+| `ReStore.Domain` | `BaseEntity` (marker), `IHasInactive`, `ControlAttribute`, `DomainResponse` + `One`/`List`, `RequestConfig` + `RequestPaging`/`OrderInfo`/`RequestBody`, `IGenericQuery/CommandRepositoryBase`, `EntityChangeEntry`. Entities `Product`, `Basket`, `BasketItem`, `Order`, `OrderItem` now derive from `BaseEntity`. |
+| `ReStore.Application` | `BaseCommand` (5 command bases + `BaseReturn`/`InsertReturn`/`UpdateReturn`/`DeleteReturn`), `BaseQuery`, `BaseDto` envelopes, `IControls` + `BaseControls` + `ControlAttributeValidator`, `IMapperCustome`, `IAppLogger`, `ICache`, `IMessageBus`, `RedisSettings`/`RabbitMqSettings`, `ExpressionExtensions`, `EntityReflection`, and the six base handlers. |
+| `ReStore.Infrastructure` | `GenericQueryRepositoryBase` / `GenericCommandRepositoryBase`, `EntityKeyResolver`, `MapsterCustome` + `MapsterConfig`, `AppLogger`, `NullCache`/`RedisCacheService`, `NullMessageBus`/`RabbitMqMessageBus`, `ServiceRegistration.AddInfrastructure`. |
+
+`Program.cs` now calls `AddInfrastructure(builder.Configuration)` instead of
+registering the DbContext itself; `appsettings.json` gained the two disabled
+`Redis`/`RabbitMq` sections.
+
+**Deviations from the item list, all deliberate:**
+
+1. `[CheckKeyExists]` and the non-generic repository bases are **not** in the
+   kernel. The attribute is only meaningful against real feature repositories,
+   so it lands with Phase 2 rather than as an untested seam.
+2. `FilterInfo`/`QueryFilter`/`eFilterType` are **not** ported. Honouring them
+   needs upstream's `IFilterOperate` expression builder, and ReStore's queries
+   need only `FullSearchPhrase` + `GetAdditionalCriteria`. A silent
+   pass-through would have been worse than absence.
+3. `BaseControls.GetSelectForKey()` returns null by default, so a control loads
+   the **whole** row rather than upstream's key-only projection. Cheaper reads
+   are still available by overriding it; correctness first.
+4. Redis/RabbitMQ settings are bound **by indexer** in `ServiceRegistration`,
+   because `Microsoft.Extensions.Configuration.Binder` has no 9.0.x in the local
+   package cache. No behavioural difference.
+5. Ordering column names are validated against the entity's properties before
+   they reach Dynamic LINQ (`ListAsync_ignores_an_ordering_column_that_is_not_a_property`).
+   Upstream passed the client's column name straight through.
+6. `BaseInActiveHandler` and `IHasInactive` exist but **no entity implements**
+   the marker — soft delete is a product decision, not part of the port.
+
+**Gates:**
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build ReStore.sln -c Release` | succeeded, 0 errors |
+| `dotnet test` | **40/40 pass** |
+| App starts with the new DI graph | yes — `/health/app` 200, `/api/orders` 401, Swagger 200, `/` 200, `/api/buggy/bad-request` 400, no DI resolution errors |
+| Runs without Redis or RabbitMQ | yes — `NullCache`/`NullMessageBus` registered; `RedisCache_degrades_to_a_miss_when_the_server_is_unreachable` proves the real adapter cannot throw either |
+
+The tests worth knowing about, because each pins a behaviour the port depends on:
+partial update writes **only** `changeFields`; a failing `afterSave` rolls the
+delete back; a `SelectExpr` projection maps back onto the entity and leaves
+unselected columns at their defaults; Mapster's `IgnoreNullValues` keeps a column
+the command did not mention; a throwing repository becomes `Result=Failed`
+instead of an exception; and a failing control stops the add before the
+repository is touched.
+
+**Not in the kernel yet, on purpose:** `AddMediatR` is not wired in `Program.cs`
+and no controller uses `IMediator`. That is the first step of Phase 2, together
+with the first real slice.
+
 ---
 
 ## 6. Deviations from AccountsApi (all optional / recommended)

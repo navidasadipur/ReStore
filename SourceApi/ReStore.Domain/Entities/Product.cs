@@ -1,6 +1,8 @@
+using ReStore.Domain.Common;
+
 namespace ReStore.Domain.Entities
 {
-    public class Product
+    public class Product : BaseEntity
     {
         public int Id { get; set; }         
         public string Name { get; set; }

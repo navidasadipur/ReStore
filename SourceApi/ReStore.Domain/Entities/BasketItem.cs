@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using ReStore.Domain.Common;
 
 namespace ReStore.Domain.Entities
 {
     [Table("BasketItems")]
-    public class BasketItem
+    public class BasketItem : BaseEntity
     {
         public int Id { get; set; }
         public int Quantity { get; set; }

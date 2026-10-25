@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using ReStore.Infrastructure.IoC;
 using ReStore.Infrastructure.Persistence;
 using ReStore.Domain.Entities;
 using ReStore.Api.Middleware;
@@ -55,10 +56,9 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-builder.Services.AddDbContext<StoreContext>(opt =>
-{
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
-});
+// Persistence, repositories, controls, mapping and the (inert) Redis/RabbitMQ
+// seams are wired in one place: ReStore.Infrastructure.
+builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services
     .AddHealthChecks()
