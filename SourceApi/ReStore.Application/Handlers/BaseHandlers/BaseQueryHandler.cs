@@ -65,6 +65,16 @@ namespace ReStore.Application.Handlers.BaseHandlers
         /// <summary>Rejects a malformed query before it reaches the database.</summary>
         protected virtual DomainResponse? ValidateQuery(Query query) => null;
 
+        /// <summary>
+        /// The ORDER BY columns for this query. Override it when the client sends a
+        /// friendly sort key ("price", "priceDesc") instead of a column name.
+        ///
+        /// Fully qualified because Domain.Interfaces.Common has its own OrderInfo: that
+        /// one is the instruction handed to the repository, this one is the caller's
+        /// choice.
+        /// </summary>
+        protected virtual IReadOnlyCollection<Common.OrderInfo>? GetOrdering(Query query) => query.OrderInfo;
+
         protected virtual PagingInfo BuildPaging(Query query) => query.PagingInfo ?? new PagingInfo();
 
         protected virtual Task<DomainResponseList<Entity>> GetList(
@@ -167,9 +177,9 @@ namespace ReStore.Application.Handlers.BaseHandlers
             target.StartIndex = paging.StartIndex;
             target.DefaultOrderIsAcc = true;
 
-            if (query.OrderInfo is { Count: > 0 })
+            if (query.OrderInfo is { Count: > 0 } || GetOrdering(query) is { Count: > 0 })
             {
-                target.OrderCols = query.OrderInfo
+                target.OrderCols = (GetOrdering(query) ?? query.OrderInfo)!
                     .Where(order => !string.IsNullOrWhiteSpace(order.ColumnName))
                     .Select(order => new Domain.Interfaces.Common.OrderInfo(
                         order.ColumnName!,

@@ -38,7 +38,7 @@ namespace ReStore.Application.Common
     /// Add command that carries a file. Streams stay in the Application layer: the
     /// controller converts IFormFile, so nothing here references ASP.NET Core.
     /// </summary>
-    public abstract class AddFileCommand : BaseAddCommand
+    public abstract class AddFileCommand : BaseAddCommand, IFileCommand
     {
         [System.Text.Json.Serialization.JsonIgnore]
         public Stream Stream { get; set; } = Stream.Null;
@@ -47,6 +47,8 @@ namespace ReStore.Application.Common
         public string ContentType { get; set; } = string.Empty;
 
         public string FileName { get; set; } = string.Empty;
+
+        public bool HasFile => Stream != Stream.Null && !string.IsNullOrWhiteSpace(FileName);
     }
 
     public abstract class BaseDeleteCommand

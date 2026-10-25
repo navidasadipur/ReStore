@@ -19,13 +19,10 @@ axios.interceptors.request.use(config => {
 
 axios.interceptors.response.use(async response => {
     if (process.env.NODE_ENV === 'development') await sleep();
-    const pagination = response.headers['pagination'];
-    if (pagination){
-        response.data = new PaginatedResponse(response.data, JSON.parse(pagination));
-        return response;
-    }
     return response;
 }, (error: AxiosError) => {
+    // Endpoints that have not been migrated to the envelope contract yet still answer
+    // with status codes, so this branch stays for them (basket, orders, account, ...).
     const {status} = error.response!;
     const {data}: any = error.response!;
     switch (status) {
@@ -56,6 +53,68 @@ axios.interceptors.response.use(async response => {
     return Promise.reject(error.response)
 })
 
+/**
+ * The shape every migrated endpoint returns: HTTP 200 with the outcome in the body
+ * (backend decision D1). `succeeded` mirrors `result`, and is what we branch on.
+ */
+interface Envelope<T> {
+    succeeded: boolean;
+    error?: string | null;
+    data?: T;
+    totalCount?: number;
+    returnCount?: number;
+    key?: number;
+}
+
+function fail(message?: string | null): never {
+    const text = message ?? 'The request could not be completed.';
+    toast.error(text);
+    throw new Error(text);
+}
+
+function unwrapOne<T>(envelope: Envelope<T>): T {
+    if (!envelope.succeeded) fail(envelope.error);
+    if (envelope.data === null || envelope.data === undefined) {
+        fail('The requested record was not found.');
+    }
+    return envelope.data as T;
+}
+
+function unwrapCreatedKey(envelope: Envelope<unknown>): number {
+    if (!envelope.succeeded) fail(envelope.error);
+    if (envelope.key === undefined || envelope.key === null) {
+        fail('The server did not return the new record id.');
+    }
+    return envelope.key;
+}
+
+function unwrapNothing(envelope: Envelope<unknown>): void {
+    if (!envelope.succeeded) fail(envelope.error);
+}
+
+/**
+ * Turns a list envelope into the PaginatedResponse the catalog slice already expects.
+ * The envelope carries counts rather than a page number, so the page comes from the
+ * request parameters that produced it.
+ */
+function unwrapList<T>(envelope: Envelope<T[]>, params?: URLSearchParams): PaginatedResponse<T[]> {
+    if (!envelope.succeeded) fail(envelope.error);
+
+    const items = envelope.data ?? [];
+    const pageSize = envelope.returnCount && envelope.returnCount > 0
+        ? envelope.returnCount
+        : items.length;
+    const totalCount = envelope.totalCount ?? items.length;
+    const currentPage = Number(params?.get('pageNumber') ?? 1) || 1;
+
+    return new PaginatedResponse(items, {
+        currentPage,
+        pageSize: pageSize || 1,
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / Math.max(1, pageSize || 1)))
+    });
+}
+
 const requests = {
     get: (url: string, params?: URLSearchParams) => axios.get(url, {params}).then(responseBody),
     post: (url: string, body: {}) => axios.post(url, body).then(responseBody),
@@ -77,16 +136,38 @@ function createFormData(item: any) {
     return formData;
 }
 
-const Admin = {
-    createProduct: (product: any) => requests.postForm('products', createFormData(product)),
-    updateProduct: (product: any) => requests.putForm('products', createFormData(product)),
-    deleteProduct: (id: number) => requests.delete(`products/${id}`)
+const Catalog = {
+    list: async (params: URLSearchParams) => {
+        const envelope: Envelope<any[]> = await requests.get('products', params);
+        return unwrapList(envelope, params);
+    },
+    details: async (id: number) => {
+        const envelope: Envelope<any> = await requests.get(`products/${id}`);
+        return unwrapOne(envelope);
+    },
+    fetchFilters: async () => {
+        const envelope: Envelope<{brands: string[], types: string[]}> = await requests.get('products/filters');
+        return unwrapOne(envelope);
+    }
 }
 
-const Catalog = {
-    list: (params: URLSearchParams) => requests.get('products', params),
-    details: (id : number) => requests.get(`products/${id}`),
-    fetchFilters: () => requests.get('products/filters')
+const Admin = {
+    // Create answers with the new id only, so the product is read back: the form upserts
+    // the returned product into the catalog and expects the full shape.
+    createProduct: async (product: any) => {
+        const envelope: Envelope<unknown> = await requests.postForm('products', createFormData(product));
+        const id = unwrapCreatedKey(envelope);
+        return await Catalog.details(id);
+    },
+    updateProduct: async (product: any) => {
+        const envelope: Envelope<unknown> = await requests.putForm('products', createFormData(product));
+        unwrapNothing(envelope);
+        return await Catalog.details(product.id);
+    },
+    deleteProduct: async (id: number) => {
+        const envelope: Envelope<unknown> = await requests.delete(`products/${id}`);
+        unwrapNothing(envelope);
+    }
 }
 
 const TestErrors = {

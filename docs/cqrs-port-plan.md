@@ -768,6 +768,83 @@ new one. The folder was restored with `git checkout -- <migrations dir>` and
 verified clean against the commit. **Never combine `migrations remove` with
 `--no-build`.**
 
+### 8.2 Phase 3 — executed: the Products slice
+
+The first real slice, and with it the end of AutoMapper (D2): Products was its
+only consumer.
+
+| Layer | Added |
+| --- | --- |
+| Application | `ProductListQuery` / `ProductDetailQuery` / `ProductFiltersQuery` + handlers, `CreateProductCommand` / `UpdateProductCommand` / `DeleteProductCommand` + handlers, `ProductControls`, `ProductListDto` / `ProductDetailDto` / `ProductFilterDto`, `IImageStorage`, `IProductQueryRepository`, `IFileCommand`/`UpdateFileCommand` |
+| Infrastructure | `CloudinaryImageStorage` (fail-soft), `ProductQueryRepository` (distinct filters + public-id check), registrations for `IControls<ProductEntity>`, `IProductQueryRepository`, `IImageStorage` |
+| Api | `ProductsController` reduced to bind → `IMediator.Send` → envelope; `ProductMcpTools` rewired onto `IMediator` |
+
+**Removed:** `ProductExtensions` (its sort/search/filter logic is now
+`GetOrdering` / `FullSearchExpr` / `GetAdditionalCriteria`), `PagedList`,
+`MappingProfiles`, `ImageService`, `HttpExtensions` (the `Pagination` header is
+gone), the AutoMapper and Cloudinary packages from the Api project.
+
+**Wire contract.** Products now answer with the envelope at HTTP 200 (D1).
+`[JsonPropertyName("id")]` moved from the entity to the DTOs, so the *product
+shape* is unchanged and only the wrapper is new. `agent.ts` was the only client
+file touched: it unwraps the envelope, rebuilds the `PaginatedResponse` the
+catalog slice already expects (page number from the request parameters, counts
+from the envelope), and reads a product back after create/update so the admin
+form can still upsert the full record.
+
+**Kernel addition justified by the slice:** `BaseQueryHandler.GetOrdering` — the
+catalog sends `orderBy=priceDesc`, a UI sort key rather than a column name, so
+the handler translates it (the alternative was leaking that vocabulary into the
+controller).
+
+**MCP tools are pass-throughs, by decision.** `list_products`, `get_product`,
+`get_product_filters`, `create_product`, `update_product` and `delete_product`
+return exactly what their endpoints return — the same envelopes, the same DTOs,
+failures included as `succeeded=false`. There are no MCP-specific response
+records: a second shape would be a second contract to keep in step, and it would
+drift the first time a DTO changed. Tool names, descriptions and parameters are
+unchanged.
+
+**Tests: 12 new, 67 total.** They cover page + total, brand∧type filters,
+case-insensitive search, the `priceDesc` translation, detail hit/miss, distinct
+filters, create-with-image (url/public id persisted), a price below the control
+minimum (nothing uploaded), a failing upload surfacing the storage message,
+update replacing the image *and* deleting the previous one, update without a file
+keeping it, and delete removing the image after the row.
+
+**Not verified here:** `client/node_modules` is absent and the package feeds are
+unreachable, so `agent.ts` was reviewed but **not** compiled. Run
+`cd client && npm ci && npm run build` (or `npm start`) before trusting the
+catalog UI.
+
+**Mixed mode is expected:** basket, orders, account and payments still use
+`StoreContext` directly and still answer with status codes, which is why the
+axios error checker keeps its 400/401/403/500 branch. Those slices are
+Phases 4–7.
+
+**Controller input: the query/command *is* the parameter.** `GetProducts`,
+`GetProduct` and `DeleteProduct` bind `ProductListQuery`, `ProductDetailQuery`
+and `DeleteProductCommand` straight from the query string / route, so the action
+body is one `Send` — exactly the AccountsApi shape. `ProductParams`,
+`PaginationParams` and `MetaData` were deleted with this change; the list query
+carries flat `PageNumber`/`PageSize` (query-string friendly) and the handler turns
+them into `PagingInfo` in its `BuildPaging` override.
+
+**The one exception is the two commands that carry a file**, and it is a real
+constraint rather than habit: the upload arrives as `IFormFile`, the command
+carries a `Stream`, and §7.6 keeps ASP.NET Core out of Application. So
+`CreateProductDto`/`UpdateProductDto` remain as multipart adapters whose
+`ToCommand()` does the conversion. Their DataAnnotations were **removed** in the
+process: `[ApiController]` turned a missing field into an HTTP 400 ProblemDetails
+while every other failure comes back as a 200 envelope (D1). Now there is one
+error channel — ProductControls — and one set of messages.
+
+**A regression this phase caught, worth remembering:** the entity-rename script
+also renamed the *property* `UserDto.Basket` to `BasketEntity`, which compiles
+fine and silently changes the wire contract (`user.basket` → `user.basketEntity`).
+The compiler cannot see it; only reading the DTO did. **DTO property names are
+part of the API contract and must never follow an entity rename.**
+
 ---
 
 ## 9. Deferred infrastructure — the switch-on runbook

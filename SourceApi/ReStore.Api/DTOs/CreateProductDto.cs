@@ -1,30 +1,45 @@
-using System.ComponentModel.DataAnnotations;
+using ReStore.Application.Commands;
 
 namespace ReStore.Api.DTOs
 {
+    /// <summary>
+    /// The multipart form for creating a product. It exists for exactly one reason: the
+    /// uploaded file arrives as <see cref="IFormFile"/>, and the command it becomes
+    /// carries a Stream, so ReStore.Application stays free of ASP.NET Core (plan §7.6).
+    /// Everything else is straight from the form.
+    ///
+    /// Deliberately no DataAnnotations: [ApiController] would turn a missing field into an
+    /// HTTP 400 ProblemDetails, while every other failure comes back as a 200 envelope
+    /// (decision D1). The rules live in ProductControls, so there is one error channel and
+    /// one set of messages.
+    /// </summary>
     public class CreateProductDto
     {
-        [Required]
-        public string Name { get; set; }
-        
-        [Required]
-        public string Description { get; set; }
+        public string? Name { get; set; }
 
-        [Required]
-        [Range(100, Double.PositiveInfinity)]
+        public string? Description { get; set; }
+
         public long Price { get; set; }
 
-        [Required]
-        public IFormFile File { get; set; }
+        public IFormFile? File { get; set; }
 
-        [Required]
-        public string Type { get; set; }
+        public string? Type { get; set; }
 
-        [Required]
-        public string Brand { get; set; }
+        public string? Brand { get; set; }
 
-        [Required]
-        [Range(0, 200)]  
-        public int QuantityInStock { get; set; }   
+        public int QuantityInStock { get; set; }
+
+        public CreateProductCommand ToCommand() => new()
+        {
+            Name = Name ?? string.Empty,
+            Description = Description ?? string.Empty,
+            Price = Price,
+            Type = Type ?? string.Empty,
+            Brand = Brand ?? string.Empty,
+            QuantityInStock = QuantityInStock,
+            Stream = File is { Length: > 0 } ? File.OpenReadStream() : Stream.Null,
+            ContentType = File?.ContentType ?? string.Empty,
+            FileName = File?.FileName ?? string.Empty
+        };
     }
 }

@@ -12,6 +12,8 @@
     <PackageReference Include="Mapster.DependencyInjection" Version="1.0.1" />
     <!-- String-based Where/OrderBy so client-supplied filters stay data, not code. -->
     <PackageReference Include="System.Linq.Dynamic.Core" Version="1.7.1" />
+    <!-- Image storage adapter (IImageStorage). -->
+    <PackageReference Include="CloudinaryDotNet" Version="1.20.0" />
   </ItemGroup>
 
   <ItemGroup>

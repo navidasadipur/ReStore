@@ -5,8 +5,8 @@ using ReStore.Infrastructure.Persistence;
 using ReStore.Domain.Entities;
 using ReStore.Api.Middleware;
 using ReStore.Api.Mcp;
-using ReStore.Api.RequestHelpers;
 using ReStore.Api.Services;
+using ReStore.Application.Queries;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
@@ -24,7 +24,9 @@ builder.Services
     .AddMcpServer()
     .WithHttpTransport()
     .WithTools<ProductMcpTools>();
-builder.Services.AddAutoMapper(typeof(MappingProfiles).Assembly);
+// CQRS handlers (queries, commands) live in ReStore.Application.
+builder.Services.AddMediatR(configuration =>
+    configuration.RegisterServicesFromAssembly(typeof(ProductListQuery).Assembly));
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -98,7 +100,6 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<PaymentService>();
-builder.Services.AddScoped<ImageService>();
 
 var app = builder.Build();
 

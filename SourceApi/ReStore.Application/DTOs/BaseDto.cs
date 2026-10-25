@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace ReStore.Application.DTOs
 {
     /// <summary>Marker base for response DTOs, so the envelopes can be generic over them.</summary>
@@ -43,6 +41,12 @@ namespace ReStore.Application.DTOs
         public bool Result { get; set; }
 
         public string? Error { get; set; }
+
+        /// <summary>
+        /// Alias of <see cref="Result"/> so query and command envelopes read the same way
+        /// at the call site (BaseReturn exposes Succeeded for commands).
+        /// </summary>
+        public bool Succeeded => Result;
 
         /// <summary>Rows matching the criteria, ignoring paging.</summary>
         public int TotalCount { get; set; }

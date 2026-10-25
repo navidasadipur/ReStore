@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ReStore.Application.Common;
 using ReStore.Application.Controls;
 using ReStore.Application.Interfaces;
+using ReStore.Domain.Entities;
 using ReStore.Domain.Interfaces.Repository;
 using ReStore.Infrastructure.Caching;
 using ReStore.Infrastructure.Mapping;
@@ -67,8 +68,19 @@ namespace ReStore.Infrastructure.IoC
             services.AddScoped<IKeyExistenceChecker, KeyExistenceChecker>();
 
             // The default control for any entity; a feature registers its own
-            // IControls<T> when it needs business rules.
+            // IControls<T> when it needs business rules. The closed registrations below
+            // win over the open one, because DI resolves the last match.
             services.AddScoped(typeof(IControls<>), typeof(BaseControls<>));
+
+            AddProductSlice(services);
+        }
+
+        /// <summary>Products: its own control, its own read repository, and image storage.</summary>
+        private static void AddProductSlice(IServiceCollection services)
+        {
+            services.AddScoped<IControls<ProductEntity>, ProductControls>();
+            services.AddScoped<IProductQueryRepository, ProductQueryRepository>();
+            services.AddScoped<IImageStorage, CloudinaryImageStorage>();
         }
 
         /// <summary>
