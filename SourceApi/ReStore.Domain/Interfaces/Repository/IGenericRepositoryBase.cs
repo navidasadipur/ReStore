@@ -7,18 +7,27 @@ using ReStore.Domain.Interfaces.Common;
 namespace ReStore.Domain.Interfaces.Repository
 {
     /// <summary>
+    /// The part of a read repository that can be used without knowing the entity type.
+    /// <see cref="CheckKeyExistsAttribute"/> needs this: the attribute can only name a
+    /// repository as a <see cref="Type"/>, so the caller cannot be generic over the
+    /// entity at compile time.
+    /// </summary>
+    public interface INonGenericQueryRepositoryBase
+    {
+        string IdPropertyName { get; }
+
+        Task<DomainResponse> IsKeyExistsAsync(
+            object id,
+            CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
     /// Read side. Separated from the write side on purpose: a query handler only
     /// ever needs this, and reads use AsNoTracking.
     /// </summary>
-    public interface IGenericQueryRepositoryBase<Entity> where Entity : BaseEntity
+    public interface IGenericQueryRepositoryBase<Entity> : INonGenericQueryRepositoryBase
+        where Entity : BaseEntity
     {
-        /// <summary>
-        /// The key property name, taken from EF Core metadata. Callers need it when
-        /// the key is not called "Id" (it is "Id" everywhere in ReStore today, but
-        /// nothing in this interface assumes that).
-        /// </summary>
-        string IdPropertyName { get; }
-
         Task<DomainResponseOne<Entity>> GetByIdAsync(
             object id,
             RequestConfig<Entity>? requestConfig = null,
@@ -31,11 +40,6 @@ namespace ReStore.Domain.Interfaces.Repository
 
         Task<DomainResponseList<Entity>> ListAsync(
             RequestConfig<Entity>? requestConfig = null,
-            CancellationToken cancellationToken = default);
-
-        /// <summary>True when a row with this key exists. Used by Controls before an update or delete.</summary>
-        Task<DomainResponse> IsKeyExistsAsync(
-            object id,
             CancellationToken cancellationToken = default);
     }
 

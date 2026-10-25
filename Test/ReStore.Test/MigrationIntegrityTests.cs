@@ -21,11 +21,18 @@ namespace ReStore.Test;
 /// </summary>
 public class MigrationIntegrityTests
 {
+    /// <summary>
+    /// The full migration list, in order. This is a tripwire: adding, removing or
+    /// reordering a migration must be a deliberate act that updates this list. The
+    /// first three are the original ReStore migrations and must never change, because
+    /// they identify the schema of any database already deployed.
+    /// </summary>
     private static readonly string[] ExpectedMigrationIds =
     [
         "20230515130717_PostGresInitial",
         "20230531143443_makePictureUrlNullable",
-        "20230603090725_PublicIdAdded"
+        "20230603090725_PublicIdAdded",
+        "20261025091004_RenameEntityKeys"
     ];
 
     private static Type[] MigrationTypes => typeof(StoreContext).Assembly.GetTypes()
@@ -39,13 +46,13 @@ public class MigrationIntegrityTests
         .Id;
 
     [Fact]
-    public void StoreContext_exposes_exactly_the_three_original_migrations()
+    public void StoreContext_exposes_exactly_the_expected_migrations()
     {
         var ids = MigrationTypes.Select(IdOf).OrderBy(id => id, StringComparer.Ordinal);
 
         ids.Should().Equal(ExpectedMigrationIds,
-            "the project move must preserve every migration ID so an existing "
-            + "database is not treated as uninitialised");
+            "the project move and the key rename must preserve every migration ID so "
+            + "an existing database is not treated as uninitialised");
     }
 
     [Fact]

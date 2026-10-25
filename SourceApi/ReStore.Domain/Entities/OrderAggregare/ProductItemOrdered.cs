@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace ReStore.Domain.Entities.OrderAggregare
 {
     /// <summary>
-    /// Owned by <see cref="OrderItem"/>. The ownership is declared in
+    /// Owned by <see cref="OrderItemEntity"/>. The ownership is declared in
     /// StoreContext.OnModelCreating rather than with EF's [Owned] attribute, so
     /// this project stays free of any persistence framework.
     /// </summary>

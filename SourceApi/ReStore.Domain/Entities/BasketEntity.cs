@@ -1,28 +1,32 @@
+using System.ComponentModel.DataAnnotations;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using System.Threading.Tasks;
 using ReStore.Domain.Common;
 
 namespace ReStore.Domain.Entities
 {
-    public class Basket : BaseEntity
+    public class BasketEntity : BaseEntity
     {
-        public int Id { get; set; }
+        /// <summary>Key is "BasketId", not Id/BasketEntityId, so it needs [Key].</summary>
+        [Key]
+        public int BasketId { get; set; }
         public string BuyerId { get; set; }
-        public List<BasketItem> Items { get; set; } = new();
+        public List<BasketItemEntity> Items { get; set; } = new();
         public string? PaymentIntentId { get; set; }
         public string? ClientSecret { get; set; }
 
-        public void AddItem(Product product, int quantity)
+        public void AddItem(ProductEntity product, int quantity)
         {
             if (quantity <= 0) return;
 
-            var existingItem = Items.FirstOrDefault(item => item.ProductId == product.Id);
+            var existingItem = Items.FirstOrDefault(item => item.ProductId == product.ProductId);
 
             if (existingItem == null)
             {
-                Items.Add(new BasketItem { Product = product, ProductId = product.Id, Quantity = quantity });
+                Items.Add(new BasketItemEntity { Product = product, ProductId = product.ProductId, Quantity = quantity });
                 return;
             }
 

@@ -6,11 +6,11 @@ namespace ReStore.Api.Extensions
 {
     public static class BasketExtensions
     {
-        public static BasketDto MapBasketToDto(this Basket basket)   
+        public static BasketDto MapBasketToDto(this BasketEntity basket)   
         {
             return new BasketDto
             {
-                Id = basket.Id,
+                Id = basket.BasketId,
                 BuyerId = basket.BuyerId,
                 PaymentIntentId = basket.PaymentIntentId,
                 ClientSecret = basket.ClientSecret,
@@ -28,7 +28,7 @@ namespace ReStore.Api.Extensions
             };
         }
 
-        public static IQueryable<Basket> RetrieveBasketWithItems(this IQueryable<Basket> query, string buyerId)
+        public static IQueryable<BasketEntity> RetrieveBasketWithItems(this IQueryable<BasketEntity> query, string buyerId)
         {
             return query.Include(i => i.Items)
                 .ThenInclude(p => p.Product).Where(b => b.BuyerId == buyerId);

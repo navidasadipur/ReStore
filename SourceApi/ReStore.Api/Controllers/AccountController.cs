@@ -45,7 +45,7 @@ namespace ReStore.Api.Controllers
             {
                 Email = user.Email,
                 Token = await _tokenService.GenerateToken(user),
-                Basket = anonBasket != null ? anonBasket.MapBasketToDto() : userBasket?.MapBasketToDto()
+                BasketEntity = anonBasket != null ? anonBasket.MapBasketToDto() : userBasket?.MapBasketToDto()
             };
         }
 
@@ -83,7 +83,7 @@ namespace ReStore.Api.Controllers
             {
                 Email = user.Email, 
                 Token = await _tokenService.GenerateToken(user),
-                Basket = userBasket?.MapBasketToDto()
+                BasketEntity = userBasket?.MapBasketToDto()
             };
         }
 
@@ -97,7 +97,7 @@ namespace ReStore.Api.Controllers
                 .FirstOrDefaultAsync();
         }
 
-        private async Task<Basket> RetrieveBasket(string buyerId)
+        private async Task<BasketEntity> RetrieveBasket(string buyerId)
         {
             if (string.IsNullOrEmpty(buyerId))
             {

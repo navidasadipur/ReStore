@@ -14,7 +14,7 @@ namespace ReStore.Application.Handlers.BaseHandlers
     /// Soft delete: flips <see cref="IHasInactive.Inactive"/> instead of removing the
     /// row. It exists now, unused, because the pipeline is part of the architecture we
     /// are adopting; it starts working the moment an entity implements IHasInactive
-    /// (Product is the obvious first candidate, but that is a product decision).
+    /// (ProductEntity is the obvious first candidate, but that is a product decision).
     /// </summary>
     public abstract class BaseInActiveHandler<Entity, Command> : IRequestHandler<Command, UpdateReturn>
         where Entity : BaseEntity, IHasInactive

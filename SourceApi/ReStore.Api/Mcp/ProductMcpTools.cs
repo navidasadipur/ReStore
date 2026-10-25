@@ -70,7 +70,7 @@ public sealed class ProductMcpTools(StoreContext context, ImageService imageServ
     {
         var product = await context.Products
             .AsNoTracking()
-            .SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
+            .SingleOrDefaultAsync(product => product.ProductId == id, cancellationToken)
             ?? throw new InvalidOperationException($"محصولی با شناسه {id} پیدا نشد.");
 
         return ProductMcpDto.FromProduct(product);
@@ -110,7 +110,7 @@ public sealed class ProductMcpTools(StoreContext context, ImageService imageServ
     {
         ValidateProductInput(name, description, price, type, brand, quantityInStock);
 
-        var product = new Product
+        var product = new ProductEntity
         {
             Name = name.Trim(),
             Description = description.Trim(),
@@ -141,7 +141,7 @@ public sealed class ProductMcpTools(StoreContext context, ImageService imageServ
         ValidateProductInput(name, description, price, type, brand, quantityInStock);
 
         var product = await context.Products
-            .SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
+            .SingleOrDefaultAsync(product => product.ProductId == id, cancellationToken)
             ?? throw new InvalidOperationException($"محصولی با شناسه {id} پیدا نشد.");
 
         product.Name = name.Trim();
@@ -163,7 +163,7 @@ public sealed class ProductMcpTools(StoreContext context, ImageService imageServ
         CancellationToken cancellationToken = default)
     {
         var product = await context.Products
-            .SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
+            .SingleOrDefaultAsync(product => product.ProductId == id, cancellationToken)
             ?? throw new InvalidOperationException($"محصولی با شناسه {id} پیدا نشد.");
 
         if (!string.IsNullOrWhiteSpace(product.publicId))
@@ -214,8 +214,8 @@ public sealed record ProductMcpDto(
     string Brand,
     int QuantityInStock)
 {
-    public static ProductMcpDto FromProduct(Product product) => new(
-        product.Id,
+    public static ProductMcpDto FromProduct(ProductEntity product) => new(
+        product.ProductId,
         product.Name,
         product.Description,
         product.Price,

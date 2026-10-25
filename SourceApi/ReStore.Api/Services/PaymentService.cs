@@ -13,7 +13,7 @@ namespace ReStore.Api.Services
 
         }
 
-        public async Task<PaymentIntent> CreateOrUpdatePaymentIntent(Basket basket)
+        public async Task<PaymentIntent> CreateOrUpdatePaymentIntent(BasketEntity basket)
         {
             StripeConfiguration.ApiKey = _config["StripeSettings:SecretKey"];
 

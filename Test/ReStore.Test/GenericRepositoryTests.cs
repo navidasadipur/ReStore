@@ -41,9 +41,9 @@ public sealed class SqliteStore : IDisposable
 
     public MapsterCustome Mapper { get; }
 
-    public Product SeedProduct(string name = "Shoe", long price = 100, string brand = "Nike")
+    public ProductEntity SeedProduct(string name = "Shoe", long price = 100, string brand = "Nike")
     {
-        var product = new Product
+        var product = new ProductEntity
         {
             Name = name,
             Description = $"{name} description",
@@ -76,9 +76,9 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     [Fact]
     public async Task Add_returns_the_generated_key_and_persists_the_row()
     {
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
 
-        var result = await repository.AddAsync(new Product
+        var result = await repository.AddAsync(new ProductEntity
         {
             Name = "Hat",
             Description = "A hat",
@@ -103,23 +103,23 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     public async Task Update_writes_only_the_columns_named_in_changeFields()
     {
         var original = _store.SeedProduct(name: "Boot", price: 150);
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
 
-        var detached = new Product
+        var detached = new ProductEntity
         {
-            Id = original.Id,
+            ProductId = original.ProductId,
             Name = "Boot v2",
             Price = 9999,
             Description = "should not be written"
         };
 
-        var result = await repository.UpdateAsync(detached, new[] { nameof(Product.Name) });
+        var result = await repository.UpdateAsync(detached, new[] { nameof(ProductEntity.Name) });
 
         result.Result.Should().BeTrue();
 
         _store.Context.ChangeTracker.Clear();
         var reloaded = await _store.Context.Products.AsNoTracking()
-            .SingleAsync(product => product.Id == original.Id);
+            .SingleAsync(product => product.ProductId == original.ProductId);
 
         reloaded.Name.Should().Be("Boot v2");
         reloaded.Price.Should().Be(150, "Price was not in changeFields");
@@ -131,9 +131,9 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     {
         var original = _store.SeedProduct(name: "Cap");
 
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
         var result = await repository.UpdateAsync(
-            new Product { Id = original.Id, Name = "Cap v2" },
+            new ProductEntity { ProductId = original.ProductId, Name = "Cap v2" },
             new[] { "NotAColumn" });
 
         result.Result.Should().BeFalse();
@@ -144,9 +144,9 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     public async Task Update_with_no_changeFields_fails_explicitly()
     {
         var original = _store.SeedProduct(name: "Sock");
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
 
-        var result = await repository.UpdateAsync(new Product { Id = original.Id }, Array.Empty<string>());
+        var result = await repository.UpdateAsync(new ProductEntity { ProductId = original.ProductId }, Array.Empty<string>());
 
         result.Result.Should().BeFalse();
         result.Error.Should().Contain("No columns");
@@ -156,17 +156,17 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     public async Task A_failing_afterSave_callback_rolls_the_delete_back()
     {
         var original = _store.SeedProduct(name: "Belt");
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
 
         var result = await repository.DeleteAsync(
-            new Product { Id = original.Id },
+            new ProductEntity { ProductId = original.ProductId },
             (_, _) => Task.FromResult(new DomainResponse("Blocked by a business rule.")));
 
         result.Result.Should().BeFalse();
         result.Error.Should().Be("Blocked by a business rule.");
 
         _store.Context.ChangeTracker.Clear();
-        (await _store.Context.Products.AnyAsync(product => product.Id == original.Id))
+        (await _store.Context.Products.AnyAsync(product => product.ProductId == original.ProductId))
             .Should().BeTrue("the transaction must have been rolled back");
     }
 
@@ -174,14 +174,14 @@ public class GenericCommandRepositoryTests : IClassFixture<SqliteStore>
     public async Task Delete_removes_the_row_when_nothing_objects()
     {
         var original = _store.SeedProduct(name: "Scarf");
-        var repository = new GenericCommandRepositoryBase<Product>(_store.Context);
+        var repository = new GenericCommandRepositoryBase<ProductEntity>(_store.Context);
 
-        var result = await repository.DeleteAsync(new Product { Id = original.Id });
+        var result = await repository.DeleteAsync(new ProductEntity { ProductId = original.ProductId });
 
         result.Result.Should().BeTrue();
 
         _store.Context.ChangeTracker.Clear();
-        (await _store.Context.Products.AnyAsync(product => product.Id == original.Id)).Should().BeFalse();
+        (await _store.Context.Products.AnyAsync(product => product.ProductId == original.ProductId)).Should().BeFalse();
     }
 }
 
@@ -191,7 +191,7 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
 
     public GenericQueryRepositoryTests(SqliteStore store) => _store = store;
 
-    private GenericQueryRepositoryBase<Product> Repository()
+    private GenericQueryRepositoryBase<ProductEntity> Repository()
         => new(_store.Context, _store.Mapper);
 
     [Fact]
@@ -200,7 +200,7 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
         _store.SeedProduct(name: "Projection", price: 777);
 
         var repository = Repository();
-        var config = new RequestConfig<Product>(product => new { product.Id, product.Name })
+        var config = new RequestConfig<ProductEntity>(product => new { product.ProductId, product.Name })
         {
             Specification = { Criteria = product => product.Name == "Projection" }
         };
@@ -223,7 +223,7 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
             _store.SeedProduct(name: $"Paged {index}", brand: "PagedBrand");
 
         var repository = Repository();
-        var config = new RequestConfig<Product>(product => new { product.Id, product.Name, product.Price });
+        var config = new RequestConfig<ProductEntity>(product => new { product.ProductId, product.Name, product.Price });
         config.Specification.Criteria = product => product.Brand == "PagedBrand";
         config.PagingRequest.PageNum = 2;
         config.PagingRequest.PageCount = 2;
@@ -242,11 +242,11 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
         _store.SeedProduct(name: "B item", brand: "OrderBrand");
 
         var repository = Repository();
-        var config = new RequestConfig<Product>(product => new { product.Id, product.Name });
+        var config = new RequestConfig<ProductEntity>(product => new { product.ProductId, product.Name });
         config.Specification.Criteria = product => product.Brand == "OrderBrand";
         config.PagingRequest.OrderCols = new()
         {
-            new Domain.Interfaces.Common.OrderInfo(nameof(Product.Name), true)
+            new Domain.Interfaces.Common.OrderInfo(nameof(ProductEntity.Name), true)
         };
 
         var result = await repository.ListAsync(config);
@@ -261,7 +261,7 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
         _store.SeedProduct(name: "BadSort", brand: "BadSortBrand");
 
         var repository = Repository();
-        var config = new RequestConfig<Product>(product => new { product.Id, product.Name });
+        var config = new RequestConfig<ProductEntity>(product => new { product.ProductId, product.Name });
         config.Specification.Criteria = product => product.Brand == "BadSortBrand";
         config.PagingRequest.OrderCols = new()
         {
@@ -291,13 +291,13 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
         var product = _store.SeedProduct(name: "Exists");
         var repository = Repository();
 
-        (await repository.IsKeyExistsAsync(product.Id)).Result.Should().BeTrue();
-        (await repository.IsKeyExistsAsync(product.Id + 10000)).Result.Should().BeFalse();
+        (await repository.IsKeyExistsAsync(product.ProductId)).Result.Should().BeTrue();
+        (await repository.IsKeyExistsAsync(product.ProductId + 10000)).Result.Should().BeFalse();
     }
 
     [Fact]
     public void IdPropertyName_comes_from_the_ef_model()
     {
-        Repository().IdPropertyName.Should().Be(nameof(Product.Id));
+        Repository().IdPropertyName.Should().Be(nameof(ProductEntity.ProductId));
     }
 }

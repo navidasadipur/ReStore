@@ -10,12 +10,12 @@ namespace ReStore.Api.Extensions
 {
     public static class OrderExtensions
     {
-        public static IQueryable<OrderDto> ProjectOrderToOrderDto(this IQueryable<Order> query)
+        public static IQueryable<OrderDto> ProjectOrderToOrderDto(this IQueryable<OrderEntity> query)
         {
             return query
                 .Select(order => new OrderDto
                 {
-                    Id = order.Id,
+                    Id = order.OrderId,
                     BuyerId = order.BuyerId,
                     OrderDate = order.OrderDate,
                     ShippingAddress = order.ShippingAddress,

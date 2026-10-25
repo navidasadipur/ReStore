@@ -96,15 +96,15 @@ public class BaseControlsTests : IClassFixture<SqliteStore>
 
     public BaseControlsTests(SqliteStore store) => _store = store;
 
-    private BaseControls<Product> Controls()
-        => new(new GenericQueryRepositoryBase<Product>(_store.Context, _store.Mapper));
+    private BaseControls<ProductEntity> Controls()
+        => new(new GenericQueryRepositoryBase<ProductEntity>(_store.Context, _store.Mapper));
 
     [Fact]
     public async Task CheckOnUpdate_reports_a_missing_row()
     {
         var result = await Controls().CheckOnUpdate(
-            new Product { Id = 918273 },
-            new[] { nameof(Product.Name) },
+            new ProductEntity { ProductId = 918273 },
+            new[] { nameof(ProductEntity.Name) },
             new UpdateNameCommand());
 
         result.Result.Should().BeFalse();
@@ -117,7 +117,7 @@ public class BaseControlsTests : IClassFixture<SqliteStore>
         var product = _store.SeedProduct(name: "NoFields");
 
         var result = await Controls().CheckOnUpdate(
-            new Product { Id = product.Id },
+            new ProductEntity { ProductId = product.ProductId },
             Array.Empty<string>(),
             new UpdateNameCommand());
 
@@ -132,13 +132,13 @@ public class BaseControlsTests : IClassFixture<SqliteStore>
 
         var controls = Controls();
         var result = await controls.CheckOnUpdate(
-            new Product { Id = product.Id },
-            new[] { nameof(Product.Name) },
+            new ProductEntity { ProductId = product.ProductId },
+            new[] { nameof(ProductEntity.Name) },
             new UpdateNameCommand());
 
         result.Result.Should().BeTrue();
         controls.LastEntityInfo.Should().NotBeNull();
-        controls.LastEntityInfo!.Id.Should().Be(product.Id);
+        controls.LastEntityInfo!.ProductId.Should().Be(product.ProductId);
         controls.LastEntityInfo.Name.Should().Be("Loaded");
     }
 
@@ -158,48 +158,82 @@ public class BaseAddCommandHandlerTests
         public string Description { get; set; } = "Description";
     }
 
-    private sealed class AddProductHandler : BaseAddCommandHandler<Product, AddProductCommand>
+    private sealed class AddProductHandler : BaseAddCommandHandler<ProductEntity, AddProductCommand>
     {
         public AddProductHandler(
-            IGenericCommandRepositoryBase<Product> repository,
-            IControls<Product> controls,
+            IGenericCommandRepositoryBase<ProductEntity> repository,
+            IControls<ProductEntity> controls,
             IMapperCustome mapper,
-            IAppLogger logger)
-            : base(repository, controls, mapper, logger)
+            IAppLogger logger,
+            IKeyExistenceChecker keyExistenceChecker)
+            : base(repository, controls, mapper, logger, keyExistenceChecker)
+        {
+        }
+    }
+
+    /// <summary>A command whose foreign key must exist before the row is created.</summary>
+    private sealed class AddBasketItemCommand : BaseAddCommand, IRequest<InsertReturn>
+    {
+        [CheckKeyExists(typeof(IGenericQueryRepositoryBase<ProductEntity>))]
+        public int ProductId { get; set; } = 7;
+
+        public string Name { get; set; } = "Basket line";
+        public long Price { get; set; } = 1;
+        public string Brand { get; set; } = "Brand";
+        public string Type { get; set; } = "Type";
+        public string Description { get; set; } = "Description";
+    }
+
+    private sealed class AddBasketItemHandler : BaseAddCommandHandler<ProductEntity, AddBasketItemCommand>
+    {
+        public AddBasketItemHandler(
+            IGenericCommandRepositoryBase<ProductEntity> repository,
+            IControls<ProductEntity> controls,
+            IMapperCustome mapper,
+            IAppLogger logger,
+            IKeyExistenceChecker keyExistenceChecker)
+            : base(repository, controls, mapper, logger, keyExistenceChecker)
         {
         }
     }
 
     private static (
-        Mock<IGenericCommandRepositoryBase<Product>> Repository,
-        Mock<IControls<Product>> Controls,
+        Mock<IGenericCommandRepositoryBase<ProductEntity>> Repository,
+        Mock<IControls<ProductEntity>> Controls,
         IMapperCustome Mapper,
-        IAppLogger Logger) Dependencies()
+        IAppLogger Logger,
+        Mock<IKeyExistenceChecker> KeyExistenceChecker) Dependencies()
     {
-        var repository = new Mock<IGenericCommandRepositoryBase<Product>>();
-        repository.SetupGet(mock => mock.IdPropertyName).Returns(nameof(Product.Id));
+        var repository = new Mock<IGenericCommandRepositoryBase<ProductEntity>>();
+        repository.SetupGet(mock => mock.IdPropertyName).Returns(nameof(ProductEntity.ProductId));
 
-        var controls = new Mock<IControls<Product>>();
-        controls.Setup(mock => mock.CheckOnAdd(It.IsAny<Product>()))
+        var controls = new Mock<IControls<ProductEntity>>();
+        controls.Setup(mock => mock.CheckOnAdd(It.IsAny<ProductEntity>()))
             .ReturnsAsync(new DomainResponse());
 
-        return (repository, controls, new MapsterCustome(MapsterConfig.Create()), new NoopAppLogger());
+        var keyExistenceChecker = new Mock<IKeyExistenceChecker>();
+        keyExistenceChecker
+            .Setup(mock => mock.CheckAsync(It.IsAny<Type>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DomainResponse());
+
+        return (repository, controls, new MapsterCustome(MapsterConfig.Create()), new NoopAppLogger(),
+                keyExistenceChecker);
     }
 
     [Fact]
     public async Task A_successful_add_returns_the_new_key()
     {
-        var (repository, controls, mapper, logger) = Dependencies();
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
 
         repository
-            .Setup(mock => mock.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Product entity, CancellationToken _) =>
+            .Setup(mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProductEntity entity, CancellationToken _) =>
             {
-                entity.Id = 42;
+                entity.ProductId = 42;
                 return new DomainResponse(42, 1);
             });
 
-        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger);
+        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger, keyExistenceChecker.Object);
 
         var result = await handler.Handle(new AddProductCommand(), CancellationToken.None);
 
@@ -214,13 +248,13 @@ public class BaseAddCommandHandlerTests
     [Fact]
     public async Task A_failing_add_becomes_a_failed_envelope_not_an_exception()
     {
-        var (repository, controls, mapper, logger) = Dependencies();
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
 
         repository
-            .Setup(mock => mock.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()))
+            .Setup(mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DomainResponse("Unique constraint violated."));
 
-        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger);
+        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger, keyExistenceChecker.Object);
 
         var result = await handler.Handle(new AddProductCommand(), CancellationToken.None);
 
@@ -231,13 +265,13 @@ public class BaseAddCommandHandlerTests
     [Fact]
     public async Task A_throwing_repository_is_caught_and_reported()
     {
-        var (repository, controls, mapper, logger) = Dependencies();
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
 
         repository
-            .Setup(mock => mock.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()))
+            .Setup(mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Database went away."));
 
-        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger);
+        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger, keyExistenceChecker.Object);
 
         var result = await handler.Handle(new AddProductCommand(), CancellationToken.None);
 
@@ -248,12 +282,12 @@ public class BaseAddCommandHandlerTests
     [Fact]
     public async Task A_failing_control_stops_the_add_before_the_repository_is_called()
     {
-        var (repository, controls, mapper, logger) = Dependencies();
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
 
-        controls.Setup(mock => mock.CheckOnAdd(It.IsAny<Product>()))
+        controls.Setup(mock => mock.CheckOnAdd(It.IsAny<ProductEntity>()))
             .ReturnsAsync(new DomainResponse("Brand is not allowed."));
 
-        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger);
+        var handler = new AddProductHandler(repository.Object, controls.Object, mapper, logger, keyExistenceChecker.Object);
 
         var result = await handler.Handle(new AddProductCommand(), CancellationToken.None);
 
@@ -261,8 +295,66 @@ public class BaseAddCommandHandlerTests
         result.Error.Should().Be("Brand is not allowed.");
 
         repository.Verify(
-            mock => mock.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()),
+            mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    /// <summary>
+    /// [CheckKeyExists] on a command: a foreign key the caller supplied must exist, and
+    /// the failure names the property so the client knows which field to fix.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_foreign_key_fails_the_add_and_names_the_property()
+    {
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
+
+        keyExistenceChecker
+            .Setup(mock => mock.CheckAsync(It.IsAny<Type>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DomainResponse("No ProductEntity with key 7 was found."));
+
+        var handler = new AddBasketItemHandler(repository.Object, controls.Object, mapper, logger,
+            keyExistenceChecker.Object);
+
+        var result = await handler.Handle(new AddBasketItemCommand(), CancellationToken.None);
+
+        result.Result.Should().Be(ReturnResult.Failed);
+        result.Error.Should().Contain("No ProductEntity with key 7 was found.")
+            .And.Contain("{ProductId}", "the message must say which field was wrong");
+
+        keyExistenceChecker.Verify(
+            mock => mock.CheckAsync(
+                typeof(IGenericQueryRepositoryBase<ProductEntity>),
+                7,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task An_existing_foreign_key_lets_the_add_proceed()
+    {
+        var (repository, controls, mapper, logger, keyExistenceChecker) = Dependencies();
+
+        repository
+            .Setup(mock => mock.AddAsync(It.IsAny<ProductEntity>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DomainResponse(11, 1));
+
+        var handler = new AddBasketItemHandler(repository.Object, controls.Object, mapper, logger,
+            keyExistenceChecker.Object);
+
+        var result = await handler.Handle(new AddBasketItemCommand(), CancellationToken.None);
+
+        result.Result.Should().Be(ReturnResult.Success);
+
+        keyExistenceChecker.Verify(
+            mock => mock.CheckAsync(
+                typeof(IGenericQueryRepositoryBase<ProductEntity>),
+                7,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }
 
@@ -279,7 +371,7 @@ public class MapsterCustomeTests
     public void IgnoreNullValues_keeps_the_existing_column()
     {
         var mapper = new MapsterCustome(MapsterConfig.Create());
-        var target = new Product { Id = 1, Name = "old", Price = 42 };
+        var target = new ProductEntity { ProductId = 1, Name = "old", Price = 42 };
 
         mapper.Map(new PatchCommand { Name = "new" }, target);
 
@@ -292,10 +384,10 @@ public class MapsterCustomeTests
     {
         var mapper = new MapsterCustome(MapsterConfig.Create());
 
-        var product = mapper.MapAnonymous<Product>(new { Id = 7, Name = "projected", Price = 55L });
+        var product = mapper.MapAnonymous<ProductEntity>(new { ProductId = 7, Name = "projected", Price = 55L });
 
         product.Should().NotBeNull();
-        product!.Id.Should().Be(7);
+        product!.ProductId.Should().Be(7);
         product.Name.Should().Be("projected");
         product.Price.Should().Be(55);
     }
@@ -305,6 +397,6 @@ public class MapsterCustomeTests
     {
         var mapper = new MapsterCustome(MapsterConfig.Create());
 
-        mapper.MapAnonymous<Product>(null).Should().BeNull();
+        mapper.MapAnonymous<ProductEntity>(null).Should().BeNull();
     }
 }

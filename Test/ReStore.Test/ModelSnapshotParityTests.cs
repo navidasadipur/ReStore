@@ -74,10 +74,10 @@ public class ModelSnapshotParityTests
     {
         using var context = CreateContext();
 
-        var orderType = context.Model.FindEntityType(typeof(Order))!;
-        var navigation = orderType.FindNavigation(nameof(Order.ShippingAddress));
+        var orderType = context.Model.FindEntityType(typeof(OrderEntity))!;
+        var navigation = orderType.FindNavigation(nameof(OrderEntity.ShippingAddress));
 
-        navigation.Should().NotBeNull("Order.ShippingAddress must still be discovered");
+        navigation.Should().NotBeNull("OrderEntity.ShippingAddress must still be discovered");
         navigation!.ForeignKey.IsOwnership.Should().BeTrue(
             "the [Owned] attribute was replaced by OwnsOne in StoreContext");
         navigation.ForeignKey.PrincipalEntityType.Should().Be(orderType);
@@ -89,10 +89,10 @@ public class ModelSnapshotParityTests
     {
         using var context = CreateContext();
 
-        var orderItemType = context.Model.FindEntityType(typeof(OrderItem))!;
-        var navigation = orderItemType.FindNavigation(nameof(OrderItem.ItemOrdered));
+        var orderItemType = context.Model.FindEntityType(typeof(OrderItemEntity))!;
+        var navigation = orderItemType.FindNavigation(nameof(OrderItemEntity.ItemOrdered));
 
-        navigation.Should().NotBeNull("OrderItem.ItemOrdered must still be discovered");
+        navigation.Should().NotBeNull("OrderItemEntity.ItemOrdered must still be discovered");
         navigation!.ForeignKey.IsOwnership.Should().BeTrue(
             "the [Owned] attribute was replaced by OwnsOne in StoreContext");
         navigation.ForeignKey.PrincipalEntityType.Should().Be(orderItemType);
@@ -102,7 +102,7 @@ public class ModelSnapshotParityTests
     [Fact]
     public void Domain_assembly_has_no_reference_to_entity_framework()
     {
-        typeof(Product).Assembly.GetReferencedAssemblies()
+        typeof(ProductEntity).Assembly.GetReferencedAssemblies()
             .Select(name => name.Name)
             .Should().NotContain(name => name != null && name.StartsWith("Microsoft.EntityFrameworkCore"),
                 "keeping EF out of ReStore.Domain is the point of moving [Owned] into StoreContext");

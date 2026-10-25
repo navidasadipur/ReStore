@@ -26,7 +26,7 @@ namespace ReStore.Api.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<PagedList<Product>>> GetProducts([FromQuery] ProductParams productParams)
+        public async Task<ActionResult<PagedList<ProductEntity>>> GetProducts([FromQuery] ProductParams productParams)
         {
             var query = _context.Products
                 .Sort(productParams.OrderBy)
@@ -34,7 +34,7 @@ namespace ReStore.Api.Controllers
                 .Filter(productParams.Brands, productParams.Types)
                 .AsQueryable();
 
-            var products = await PagedList<Product>.ToPagedList(query,
+            var products = await PagedList<ProductEntity>.ToPagedList(query,
                 productParams.PageNumber, productParams.PageSize);
 
             Response.AddPaginationHeader(products.MetaData);
@@ -43,7 +43,7 @@ namespace ReStore.Api.Controllers
         }
 
         [HttpGet("{id}", Name = "GetProduct")]
-        public async Task<ActionResult<Product>> GetProduct(int id)
+        public async Task<ActionResult<ProductEntity>> GetProduct(int id)
         {
             var product = await _context.Products.FindAsync(id);
 
@@ -63,9 +63,9 @@ namespace ReStore.Api.Controllers
 
         [Authorize(Roles = "Admin")]
         [HttpPost]
-        public async Task<ActionResult<Product>> CreateProduct([FromForm] CreateProductDto productDto)
+        public async Task<ActionResult<ProductEntity>> CreateProduct([FromForm] CreateProductDto productDto)
         {
-            var product = _mapper.Map<Product>(productDto);
+            var product = _mapper.Map<ProductEntity>(productDto);
 
             if (productDto.File != null)
             {
@@ -82,14 +82,14 @@ namespace ReStore.Api.Controllers
 
             var result = await _context.SaveChangesAsync() > 0;
 
-            if (result) return CreatedAtRoute("GetProduct", new { Id = product.Id }, product);
+            if (result) return CreatedAtRoute("GetProduct", new { Id = product.ProductId }, product);
 
             return BadRequest(new ProblemDetails { Title = "Problem creating new product" });
         }
 
         [Authorize(Roles = "Admin")]
         [HttpPut]
-        public async Task<ActionResult<Product>> UpdateProduct([FromForm]UpdateProductDto productDto)
+        public async Task<ActionResult<ProductEntity>> UpdateProduct([FromForm]UpdateProductDto productDto)
         {
             var product = await _context.Products.FindAsync(productDto.Id);
 

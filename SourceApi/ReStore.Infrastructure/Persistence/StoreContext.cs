@@ -12,9 +12,9 @@ namespace ReStore.Infrastructure.Persistence
         {
         }
 
-        public DbSet<Product> Products { get; set; }
-        public DbSet<Basket> Baskets { get; set; }
-        public DbSet<Order> Orders { get; set; }
+        public DbSet<ProductEntity> Products { get; set; }
+        public DbSet<BasketEntity> Baskets { get; set; }
+        public DbSet<OrderEntity> Orders { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -37,11 +37,26 @@ namespace ReStore.Infrastructure.Persistence
             // ReStore.Domain free of persistence concerns; the resulting model is
             // identical, which ModelSnapshotParityTests in the test project asserts
             // by diffing this model against the migration snapshot.
-            builder.Entity<Order>()
+            builder.Entity<OrderEntity>()
                 .OwnsOne(order => order.ShippingAddress);
 
-            builder.Entity<OrderItem>()
+            builder.Entity<OrderItemEntity>()
                 .OwnsOne(item => item.ItemOrdered);
+
+            // Keep the existing table names. EF derives a table name from the DbSet
+            // property where there is one (Products/Baskets/Orders) and from the CLR
+            // type otherwise, so renaming OrderItem to OrderItemEntity would silently
+            // rename this table. BasketItems already has [Table] on the entity.
+            builder.Entity<OrderItemEntity>().ToTable("OrderItem");
+
+            // Order → OrderItems has no explicit foreign key property, so EF creates a
+            // shadow one and names it after the principal type — which after the rename
+            // would be "OrderEntityOrderId". Pinning the name keeps the existing
+            // OrderItem.OrderId column and its constraint untouched.
+            builder.Entity<OrderEntity>()
+                .HasMany(order => order.OrderItems)
+                .WithOne()
+                .HasForeignKey("OrderId");
         }
     }
 }

@@ -72,7 +72,7 @@ namespace ReStore.Api.Controllers
             return BadRequest(new ProblemDetails { Title = "Problem remove item from basket" });
         }
 
-        private async Task<Basket> RetrieveBasket(string buyerId)
+        private async Task<BasketEntity> RetrieveBasket(string buyerId)
         {
             if (string.IsNullOrEmpty(buyerId))
             {
@@ -91,7 +91,7 @@ namespace ReStore.Api.Controllers
             return User.Identity?.Name ?? Request.Cookies["buyerId"];
         }
 
-        private Basket? CreateBasket()
+        private BasketEntity? CreateBasket()
         {
             var buyerId = User.Identity?.Name;
             if (string.IsNullOrEmpty(buyerId))
@@ -101,7 +101,7 @@ namespace ReStore.Api.Controllers
                 Response.Cookies.Append("buyerId", buyerId, cookieOptions);
             }
 
-            var basket = new Basket { BuyerId = buyerId };
+            var basket = new BasketEntity { BuyerId = buyerId };
             _context.Baskets.Add(basket);
             return basket;
         }

@@ -19,9 +19,9 @@ namespace ReStore.Test;
 /// </summary>
 public class FilterExpressionBuilderTests
 {
-    private static Expression<Func<Product, bool>> Build(params FilterInfo[] filters)
+    private static Expression<Func<ProductEntity, bool>> Build(params FilterInfo[] filters)
     {
-        var (expression, error) = FilterExpressionBuilder.Build<Product>(filters);
+        var (expression, error) = FilterExpressionBuilder.Build<ProductEntity>(filters);
 
         error.Should().BeNull();
         expression.Should().NotBeNull();
@@ -30,12 +30,12 @@ public class FilterExpressionBuilderTests
     }
 
     private static string? ErrorOf(params FilterInfo[] filters)
-        => FilterExpressionBuilder.Build<Product>(filters).Error;
+        => FilterExpressionBuilder.Build<ProductEntity>(filters).Error;
 
-    private static Product Sample(string brand = "Nike", long price = 150, bool hasPicture = false)
+    private static ProductEntity Sample(string brand = "Nike", long price = 150, bool hasPicture = false)
         => new()
         {
-            Id = 1,
+            ProductId = 1,
             Name = "Runner",
             Description = "A shoe",
             Brand = brand,
@@ -49,7 +49,7 @@ public class FilterExpressionBuilderTests
     public void An_unknown_column_fails_and_names_itself()
     {
         ErrorOf(new FilterInfo { ColName = "NotAColumn", Value = "x" })
-            .Should().Be("Unknown filter column 'NotAColumn' for Product.");
+            .Should().Be("Unknown filter column 'NotAColumn' for ProductEntity.");
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public class FilterExpressionBuilderTests
     {
         var predicate = Build(new FilterInfo
         {
-            ColName = nameof(Product.Brand),
+            ColName = nameof(ProductEntity.Brand),
             FilterType = eFilterType.ftEqual,
             Value = "Nike"
         }).Compile();
@@ -75,14 +75,14 @@ public class FilterExpressionBuilderTests
         // rather than relying on a database collation.
         var matchingCase = Build(new FilterInfo
         {
-            ColName = nameof(Product.Name),
+            ColName = nameof(ProductEntity.Name),
             FilterType = eFilterType.ftContains,
             Value = "Run"
         }).Compile();
 
         var otherCase = Build(new FilterInfo
         {
-            ColName = nameof(Product.Name),
+            ColName = nameof(ProductEntity.Name),
             FilterType = eFilterType.ftContains,
             Value = "run"
         }).Compile();
@@ -96,7 +96,7 @@ public class FilterExpressionBuilderTests
     {
         var predicate = Build(new FilterInfo
         {
-            ColName = nameof(Product.Price),
+            ColName = nameof(ProductEntity.Price),
             FilterType = eFilterType.ftGreaterThan,
             Value = 100L
         }).Compile();
@@ -110,7 +110,7 @@ public class FilterExpressionBuilderTests
     {
         var predicate = Build(new FilterInfo
         {
-            ColName = nameof(Product.Price),
+            ColName = nameof(ProductEntity.Price),
             FilterType = eFilterType.ftBetween,
             Value = new object[] { 100L, 200L }
         }).Compile();
@@ -125,7 +125,7 @@ public class FilterExpressionBuilderTests
     {
         var predicate = Build(new FilterInfo
         {
-            ColName = nameof(Product.Brand),
+            ColName = nameof(ProductEntity.Brand),
             FilterType = eFilterType.ftIn,
             Value = new object[] { "Nike", "Puma" }
         }).Compile();
@@ -140,7 +140,7 @@ public class FilterExpressionBuilderTests
     {
         var predicate = Build(new FilterInfo
         {
-            ColName = nameof(Product.PictureUrl),
+            ColName = nameof(ProductEntity.PictureUrl),
             FilterType = eFilterType.ftIsNull
         }).Compile();
 
@@ -152,17 +152,17 @@ public class FilterExpressionBuilderTests
     public void Filters_are_ANDed_unless_they_share_an_inner_filter_id()
     {
         var anded = Build(
-            new FilterInfo { ColName = nameof(Product.Brand), FilterType = eFilterType.ftEqual, Value = "Nike" },
-            new FilterInfo { ColName = nameof(Product.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L })
+            new FilterInfo { ColName = nameof(ProductEntity.Brand), FilterType = eFilterType.ftEqual, Value = "Nike" },
+            new FilterInfo { ColName = nameof(ProductEntity.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L })
             .Compile();
 
         anded(Sample(brand: "Nike", price: 150)).Should().BeTrue();
         anded(Sample(brand: "Nike", price: 50)).Should().BeFalse("ANDed with the price filter");
 
         var ored = Build(
-            new FilterInfo { ColName = nameof(Product.Brand), FilterType = eFilterType.ftEqual, Value = "Nike", InnerFilterId = 1 },
-            new FilterInfo { ColName = nameof(Product.Brand), FilterType = eFilterType.ftEqual, Value = "Puma", InnerFilterId = 1 },
-            new FilterInfo { ColName = nameof(Product.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L })
+            new FilterInfo { ColName = nameof(ProductEntity.Brand), FilterType = eFilterType.ftEqual, Value = "Nike", InnerFilterId = 1 },
+            new FilterInfo { ColName = nameof(ProductEntity.Brand), FilterType = eFilterType.ftEqual, Value = "Puma", InnerFilterId = 1 },
+            new FilterInfo { ColName = nameof(ProductEntity.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L })
             .Compile();
 
         ored(Sample(brand: "Nike", price: 150)).Should().BeTrue();
@@ -176,7 +176,7 @@ public class FilterExpressionBuilderTests
     {
         ErrorOf(new FilterInfo
         {
-            ColName = nameof(Product.Name),
+            ColName = nameof(ProductEntity.Name),
             FilterType = eFilterType.ftGreaterThan,
             Value = "M"
         }).Should().Contain("does not support a range comparison");
@@ -187,7 +187,7 @@ public class FilterExpressionBuilderTests
     {
         ErrorOf(new FilterInfo
         {
-            ColName = nameof(Product.Price),
+            ColName = nameof(ProductEntity.Price),
             FilterType = eFilterType.ftEqual,
             Value = "not-a-number"
         }).Should().Contain("Price").And.Contain("Int64");
@@ -198,7 +198,7 @@ public class FilterExpressionBuilderTests
     {
         ErrorOf(new FilterInfo
         {
-            ColName = nameof(Product.Price),
+            ColName = nameof(ProductEntity.Price),
             FilterType = eFilterType.ftBetween,
             Value = new object[] { 1L, 2L, 3L }
         }).Should().Contain("exactly two values");
@@ -207,7 +207,7 @@ public class FilterExpressionBuilderTests
     [Fact]
     public void No_filters_means_no_predicate()
     {
-        var (expression, error) = FilterExpressionBuilder.Build<Product>(null);
+        var (expression, error) = FilterExpressionBuilder.Build<ProductEntity>(null);
 
         expression.Should().BeNull();
         error.Should().BeNull();
@@ -231,16 +231,16 @@ public class FilterTranslationTests : IClassFixture<SqliteStore>
         _store.SeedProduct(name: "Pricey Nike", price: 500, brand: "FilterNike");
         _store.SeedProduct(name: "Pricey Puma", price: 500, brand: "FilterPuma");
 
-        var (filterExpression, filterError) = FilterExpressionBuilder.Build<Product>(new List<FilterInfo>
+        var (filterExpression, filterError) = FilterExpressionBuilder.Build<ProductEntity>(new List<FilterInfo>
         {
-            new() { ColName = nameof(Product.Brand), FilterType = eFilterType.ftIn, Value = new object[] { "FilterNike", "FilterPuma" } },
-            new() { ColName = nameof(Product.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L }
+            new() { ColName = nameof(ProductEntity.Brand), FilterType = eFilterType.ftIn, Value = new object[] { "FilterNike", "FilterPuma" } },
+            new() { ColName = nameof(ProductEntity.Price), FilterType = eFilterType.ftGreaterThan, Value = 100L }
         });
 
         filterError.Should().BeNull();
 
-        var repository = new GenericQueryRepositoryBase<Product>(_store.Context, _store.Mapper);
-        var config = new RequestConfig<Product>(product => new { product.Id, product.Name, product.Brand, product.Price });
+        var repository = new GenericQueryRepositoryBase<ProductEntity>(_store.Context, _store.Mapper);
+        var config = new RequestConfig<ProductEntity>(product => new { product.ProductId, product.Name, product.Brand, product.Price });
         config.Specification.Criteria = filterExpression;
 
         var result = await repository.ListAsync(config);

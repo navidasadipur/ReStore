@@ -48,7 +48,7 @@ namespace ReStore.Api.Controllers
 
             if (basket == null) return BadRequest(new ProblemDetails{Title = "Could no locate basket"});
 
-            var items = new List<OrderItem>();
+            var items = new List<OrderItemEntity>();
 
             foreach (var item in basket.Items)
             {
@@ -69,12 +69,12 @@ namespace ReStore.Api.Controllers
 
                 var itemOrdered = new ProductItemOrdered
                 {
-                    ProductId = productItem.Id,
+                    ProductId = productItem.ProductId,
                     Name = productItem.Name,
                     PictureUrl = productItem.PictureUrl
                 };
 
-                var orderItem = new OrderItem
+                var orderItem = new OrderItemEntity
                 {
                     ItemOrdered = itemOrdered,
                     Price = productItem.Price,
@@ -89,7 +89,7 @@ namespace ReStore.Api.Controllers
             var subtotal = items.Sum(item => item.Price * item.Quantity);
             var deliveryFee = subtotal > 10000 ? 0 : 500;
 
-            var order = new Order
+            var order = new OrderEntity
             {
                 OrderItems = items,
                 BuyerId = User.Identity.Name,
@@ -124,7 +124,7 @@ namespace ReStore.Api.Controllers
 
             var result = await _context.SaveChangesAsync() > 0;
 
-            if (result) return CreatedAtRoute("GetOrder", new {id = order.Id}, order.Id);
+            if (result) return CreatedAtRoute("GetOrder", new {id = order.OrderId}, order.OrderId);
 
             return BadRequest("Problem creating order");
         }

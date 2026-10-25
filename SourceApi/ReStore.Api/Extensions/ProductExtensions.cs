@@ -8,7 +8,7 @@ namespace ReStore.Api.Extensions
 {
     public static class ProductExtensions
     {
-        public static IQueryable<Product> Sort(this IQueryable<Product> query, string orderBy)
+        public static IQueryable<ProductEntity> Sort(this IQueryable<ProductEntity> query, string orderBy)
         {
             // if(string.IsNullOrWhiteSpace(orderBy)) return query.OrderBy(p => p.Name);
 
@@ -22,7 +22,7 @@ namespace ReStore.Api.Extensions
             return query;
         }
 
-        public static IQueryable<Product> Search(this IQueryable<Product> query, string searchTerm)
+        public static IQueryable<ProductEntity> Search(this IQueryable<ProductEntity> query, string searchTerm)
         {
             if (string.IsNullOrEmpty(searchTerm)) return query;
 
@@ -31,7 +31,7 @@ namespace ReStore.Api.Extensions
             return query.Where(p => p.Name.ToLower().Contains(lowerCaseSearchTerm) || lowerCaseSearchTerm.Contains(p.Name.ToLower()));
         }
 
-        public static IQueryable<Product> Filter(this IQueryable<Product> query, string brands, string types)
+        public static IQueryable<ProductEntity> Filter(this IQueryable<ProductEntity> query, string brands, string types)
         {
             var brandList = new List<string>();
             var typeList = new List<string>();

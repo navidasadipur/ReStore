@@ -30,9 +30,9 @@ namespace ReStore.Infrastructure.Persistence
 
             if (context.Products.Any()) return;
 
-            var products = new List<Product>
+            var products = new List<ProductEntity>
             {
-new Product
+new ProductEntity
                 {
                     Name = "Angular Speedster Board 2000",
                     Description =
@@ -43,7 +43,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Green Angular Board 3000",
                     Description = "Nunc viverra imperdiet enim. Fusce est. Vivamus a tellus.",
@@ -53,7 +53,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Core Board Speed Rush 3",
                     Description =
@@ -64,7 +64,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Net Core Super Board",
                     Description =
@@ -75,7 +75,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "React Board Super Whizzy Fast",
                     Description =
@@ -86,7 +86,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Typescript Entry Board",
                     Description =
@@ -97,7 +97,7 @@ new Product
                     Type = "Boards",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Core Blue Hat",
                     Description =
@@ -108,7 +108,7 @@ new Product
                     Type = "Hats",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Green React Woolen Hat",
                     Description =
@@ -119,7 +119,7 @@ new Product
                     Type = "Hats",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Purple React Woolen Hat",
                     Description =
@@ -130,7 +130,7 @@ new Product
                     Type = "Hats",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Blue Code Gloves",
                     Description =
@@ -141,7 +141,7 @@ new Product
                     Type = "Gloves",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Green Code Gloves",
                     Description =
@@ -152,7 +152,7 @@ new Product
                     Type = "Gloves",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Purple React Gloves",
                     Description =
@@ -163,7 +163,7 @@ new Product
                     Type = "Gloves",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Green React Gloves",
                     Description =
@@ -174,7 +174,7 @@ new Product
                     Type = "Gloves",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Redis Red Boots",
                     Description =
@@ -185,7 +185,7 @@ new Product
                     Type = "Boots",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Core Red Boots",
                     Description =
@@ -196,7 +196,7 @@ new Product
                     Type = "Boots",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Core Purple Boots",
                     Description =
@@ -207,7 +207,7 @@ new Product
                     Type = "Boots",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Angular Purple Boots",
                     Description = "Aenean nec lorem. In porttitor. Donec laoreet nonummy augue.",
@@ -217,7 +217,7 @@ new Product
                     Type = "Boots",
                     QuantityInStock = 100
                 },
-                new Product
+                new ProductEntity
                 {
                     Name = "Angular Blue Boots",
                     Description =

@@ -1,12 +1,10 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using MediatR;
 using ReStore.Application.Common;
 using ReStore.Application.Interfaces;
 using ReStore.Domain.Common;
 using ReStore.Domain.Interfaces.Common;
 using ReStore.Domain.Interfaces.Repository;
+using System.Reflection;
 
 namespace ReStore.Application.Handlers.BaseHandlers
 {
@@ -27,17 +25,20 @@ namespace ReStore.Application.Handlers.BaseHandlers
         protected readonly IControls<Entity> _controls;
         protected readonly IMapperCustome _mapper;
         protected readonly IAppLogger _logger;
+        private readonly IKeyExistenceChecker _keyExistenceChecker;
 
         protected BaseAddCommandHandler(
             IGenericCommandRepositoryBase<Entity> repository,
             IControls<Entity> controls,
             IMapperCustome mapper,
-            IAppLogger logger)
+            IAppLogger logger,
+            IKeyExistenceChecker keyExistenceChecker)
         {
             _repository = repository;
             _controls = controls;
             _mapper = mapper;
             _logger = logger;
+            _keyExistenceChecker = keyExistenceChecker;
         }
 
         public async Task<InsertReturn> Handle(Command command, CancellationToken cancellationToken)
@@ -51,6 +52,10 @@ namespace ReStore.Application.Handlers.BaseHandlers
                 var commandCheck = await CheckCommand(command);
                 if (commandCheck is { Result: false })
                     return Fail(commandCheck);
+
+                var foreignKeyCheck = await CheckKeyExistsFields(command, cancellationToken);
+                if (foreignKeyCheck is { Result: false })
+                    return Fail(foreignKeyCheck);
 
                 var entity = await MapEntityFromRequest(command);
                 await SetDefaultEntity(entity);
@@ -79,6 +84,35 @@ namespace ReStore.Application.Handlers.BaseHandlers
 
         /// <summary>Runs before anything else. Return a failed response to stop the add.</summary>
         protected virtual DomainResponse? BeginHandle(Command command) => null;
+
+        /// <summary>
+        /// Honours <see cref="CheckKeyExistsAttribute"/> on the command: every foreign key
+        /// the caller supplied is verified before the entity is built, and the failure
+        /// names the offending property.
+        /// </summary>
+        private async Task<DomainResponse?> CheckKeyExistsFields(
+            Command command,
+            CancellationToken cancellationToken)
+        {
+            foreach (var property in typeof(Command).GetProperties())
+            {
+                var attribute = property.GetCustomAttribute<CheckKeyExistsAttribute>();
+                if (attribute is null)
+                    continue;
+
+                var value = property.GetValue(command);
+                if (value is null)
+                    continue;
+
+                var response = await _keyExistenceChecker.CheckAsync(
+                    attribute.RepositoryType, value, cancellationToken);
+
+                if (response.Result is false)
+                    return new DomainResponse($"{response.Error} ({{{property.Name}}})");
+            }
+
+            return null;
+        }
 
         /// <summary>Validates the command itself (as opposed to the entity it will become).</summary>
         protected virtual Task<DomainResponse> CheckCommand(Command command)

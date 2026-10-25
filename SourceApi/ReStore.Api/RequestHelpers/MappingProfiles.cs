@@ -8,8 +8,8 @@ namespace ReStore.Api.RequestHelpers
     {
         public MappingProfiles()
         {
-            CreateMap<CreateProductDto, Product>();
-            CreateMap<UpdateProductDto, Product>();
+            CreateMap<CreateProductDto, ProductEntity>();
+            CreateMap<UpdateProductDto, ProductEntity>();
         }
     }
 }

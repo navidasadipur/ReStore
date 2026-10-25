@@ -62,6 +62,10 @@ namespace ReStore.Infrastructure.IoC
             services.AddScoped(typeof(IGenericQueryRepositoryBase<>), typeof(GenericQueryRepositoryBase<>));
             services.AddScoped(typeof(IGenericCommandRepositoryBase<>), typeof(GenericCommandRepositoryBase<>));
 
+            // Lets a command property's [CheckKeyExists(typeof(ISomeRepository))] be honoured
+            // without the handler doing a by-name lookup itself.
+            services.AddScoped<IKeyExistenceChecker, KeyExistenceChecker>();
+
             // The default control for any entity; a feature registers its own
             // IControls<T> when it needs business rules.
             services.AddScoped(typeof(IControls<>), typeof(BaseControls<>));

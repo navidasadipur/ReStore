@@ -4,6 +4,6 @@ namespace ReStore.Api.DTOs
     {
         public string Email { get; set; }
         public string Token { get; set; }
-        public BasketDto Basket {get; set; }
+        public BasketDto BasketEntity {get; set; }
     }
 }

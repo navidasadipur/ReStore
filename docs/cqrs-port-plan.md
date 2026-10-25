@@ -573,10 +573,11 @@ registering the DbContext itself; `appsettings.json` gained the two disabled
 
 **Deviations from the item list, all deliberate:**
 
-1. `[CheckKeyExists]` and the non-generic repository bases are **not** in the
-   kernel. The attribute is only meaningful against real feature repositories,
-   so it moves to the rename phase (D12), where those repositories are written
-   against the final entity names.
+1. **Resolved by D12 — done in Phase 2.** `[CheckKeyExists]` and the non-generic
+   repository base (`INonGenericQueryRepositoryBase`) are implemented, now that a
+   migration phase exists to carry them. One deliberate change: the attribute
+   names a repository `Type` instead of a string, because a by-name lookup is the
+   service locator D6 removed.
 2. **Resolved — reversed by D10.** `FilterInfo`/`eFilterType` are ported, with
    `FilterExpressionBuilder` translating them into one predicate (13 operators
    plus `ftWordtoWord` treated as `ftEqual`, `ftBetween`, `ftIn`, and
@@ -704,6 +705,68 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 8 | API shell | `Program.cs` slims; `AddMediatR` + the envelope→HTTP decision (D1) lands here together with the client update |
 | 9 | Docs | `README.md` API section, `docs/architecture.md` |
 | 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
+
+### 8.1 Phase 2 — executed (result log)
+
+Entities and keys renamed, `[CheckKeyExists]` landed, one data-preserving migration.
+
+| Before | After |
+| --- | --- |
+| `Product` / `Id` | `ProductEntity` / `ProductId` |
+| `Basket` / `Id` | `BasketEntity` / `BasketId` |
+| `BasketItem` / `Id` | `BasketItemEntity` / `BasketItemId` |
+| `Order` / `Id` | `OrderEntity` / `OrderId` |
+| `OrderItem` / `Id` | `OrderItemEntity` / `OrderItemId` |
+
+>150 identifiers across 22 files. **Identity entities were deliberately not
+renamed** (`User`, `Role`, `UserAddress`, `Address`): their names are part of the
+`IdentityDbContext<User, Role, int>` generic contract and their tables are
+framework-owned (`AspNet*`).
+
+Four things this phase taught, each now encoded in the code:
+
+1. **`[Key]` became necessary.** EF's key convention only recognises `Id` or
+   `<ClassName>Id`; a `ProductId` inside `ProductEntity` matches neither, so the
+   model failed validation with *"requires a primary key to be defined"*.
+   `[Key]` (DataAnnotations, not EF) fixes it and keeps `ReStore.Domain` free of
+   any persistence framework — which is exactly why AccountsApi uses it too.
+2. **Navigation names must not follow the rename.** A scripted rename also turned
+   `BasketItemEntity.Product` into `ProductEntity`, which would have made
+   `ProductId` a plain column and added shadow foreign keys. Names are back to
+   `Product`/`Basket`, with a comment saying why.
+3. **`Order → OrderItems` has no explicit FK**, so EF generated a shadow one and
+   named it after the principal type → it wanted to rename `OrderItem.OrderId` to
+   `OrderEntityOrderId`. Pinned with `HasForeignKey("OrderId")` instead.
+4. **Table names are preserved.** EF derives a table name from the DbSet property
+   (`Products`, `Baskets`, `Orders`) or the CLR type otherwise, so
+   `OrderItemEntity` needed `ToTable("OrderItem")`. `BasketItems` already had
+   `[Table]`.
+
+**Migration:** `20261025091004_RenameEntityKeys` — five `RenameColumn`
+operations and nothing else. EF was willing to produce this as a rename (same
+type, same position), so there is no drop/add and **no data loss**. `ef
+migrations list` now shows the four migrations, and `MigrationIntegrityTests`
+pins that list so the next schema change has to be deliberate.
+
+**Wire unchanged:** `ProductEntity.ProductId` still carries
+`[JsonPropertyName("id")]`, because `ProductsController` serialises the entity
+directly and the React client reads `product.id`. The attribute moves to the DTO
+when the Products slice lands.
+
+**`[CheckKeyExists]` is in** (deviation 1 closed), with one deliberate change from
+upstream: the attribute takes a `Type`, not a repository *name*. Resolving a repo
+by name is the service-locator lookup ReStore removed in D6, so
+`IKeyExistenceChecker` (Infrastructure) resolves the named type and the handler
+calls it before mapping the entity; a failure names the property in braces —
+`No ProductEntity with key 7 was found. ({ProductId})`. Two tests cover it: a
+missing key blocks the add, an existing one lets it through.
+
+**Incident, recorded because it is easy to repeat:** `dotnet ef migrations remove
+--force --no-build` ran against a Debug assembly that predated the migration, so
+EF removed the *last migration it knew about* — `PublicIdAdded` — instead of the
+new one. The folder was restored with `git checkout -- <migrations dir>` and
+verified clean against the commit. **Never combine `migrations remove` with
+`--no-build`.**
 
 ---
 
