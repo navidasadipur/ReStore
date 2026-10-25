@@ -22,6 +22,9 @@ handlers, a generic repository pair over a `RequestConfig`, per-entity
 | D6 | **Base handlers use constructor injection** instead of the `IIocContainers` service locator. | Behaviour-neutral — see §5.10 for the one lifetime caveat. Pipeline and `virtual` hooks unchanged. |
 | D7 | **`ChangeFields` partial-update plumbing is kept.** | `BaseUpdateCommand.ChangeFields` and the `Controls.CheckOnUpdate` filter stay, even though ReStore's forms currently send every column. |
 | D9 | **Redis and RabbitMQ come in now — as fail-soft seams with a commented registration.** Interfaces + real adapters + settings exist in code; the real adapters are *not* DI-registered. No-op implementations are registered in their place. | Nothing connects anywhere; the app cannot fail because the servers are missing. See §9 for the switch-on runbook. |
+| D10 | **The filter engine is in the kernel.** `FilterInfo` + all 14 `eFilterType` values, translated to an expression by `FilterExpressionBuilder` (reverses deviation 2). | Clients can drive column filters and OR/AND groups, not just the free-text phrase. |
+| D11 | **An unknown sort or filter column fails the request**, naming the column (reverses deviation 3). | A client typo is reported instead of silently changing the result set. |
+| D12 | **A dedicated phase renames the entities and primary keys** of every table, before the feature slices. | `[CheckKeyExists]` lands there too (deviation 1 moves there). Slices are then written against the final names. See §8. |
 
 ---
 
@@ -572,20 +575,30 @@ registering the DbContext itself; `appsettings.json` gained the two disabled
 
 1. `[CheckKeyExists]` and the non-generic repository bases are **not** in the
    kernel. The attribute is only meaningful against real feature repositories,
-   so it lands with Phase 2 rather than as an untested seam.
-2. `FilterInfo`/`QueryFilter`/`eFilterType` are **not** ported. Honouring them
-   needs upstream's `IFilterOperate` expression builder, and ReStore's queries
-   need only `FullSearchPhrase` + `GetAdditionalCriteria`. A silent
-   pass-through would have been worse than absence.
+   so it moves to the rename phase (D12), where those repositories are written
+   against the final entity names.
+2. **Resolved — reversed by D10.** `FilterInfo`/`eFilterType` are ported, with
+   `FilterExpressionBuilder` translating them into one predicate (13 operators
+   plus `ftWordtoWord` treated as `ftEqual`, `ftBetween`, `ftIn`, and
+   `InnerFilterId` OR-groups). One simplification: the `QueryFilter` wrapper is
+   gone, so the JSON shape is `"filters": [...]` instead of
+   `"filters": { "filterInfo": [...] }`. The builder matches columns against the
+   **entity**, not the DTO, because that is what the expression is built from —
+   a name map belongs there only if DTOs start renaming columns.
 3. `BaseControls.GetSelectForKey()` returns null by default, so a control loads
    the **whole** row rather than upstream's key-only projection. Cheaper reads
    are still available by overriding it; correctness first.
 4. Redis/RabbitMQ settings are bound **by indexer** in `ServiceRegistration`,
    because `Microsoft.Extensions.Configuration.Binder` has no 9.0.x in the local
    package cache. No behavioural difference.
-5. Ordering column names are validated against the entity's properties before
-   they reach Dynamic LINQ (`ListAsync_ignores_an_ordering_column_that_is_not_a_property`).
-   Upstream passed the client's column name straight through.
+5. **Resolved — sharpened by D11.** Ordering columns are validated against the
+   entity's properties, and an unknown column now **fails the query naming it**
+   instead of being skipped
+   (`ListAsync_fails_with_the_name_of_an_unknown_ordering_column`). Note what
+   this guard is and is not: EF parameterizes values, so it was never a SQL
+   injection surface; the real effects are a clear error instead of a silently
+   different result set, plus no sorting by a column the API never meant to
+   expose.
 6. `BaseInActiveHandler` and `IHasInactive` exist but **no entity implements**
    the marker — soft delete is a product decision, not part of the port.
 
@@ -594,7 +607,7 @@ registering the DbContext itself; `appsettings.json` gained the two disabled
 | Gate | Result |
 | --- | --- |
 | `dotnet build ReStore.sln -c Release` | succeeded, 0 errors |
-| `dotnet test` | **40/40 pass** |
+| `dotnet test` | **53/53 pass** |
 | App starts with the new DI graph | yes — `/health/app` 200, `/api/orders` 401, Swagger 200, `/` 200, `/api/buggy/bad-request` 400, no DI resolution errors |
 | Runs without Redis or RabbitMQ | yes — `NullCache`/`NullMessageBus` registered; `RedisCache_degrades_to_a_miss_when_the_server_is_unreachable` proves the real adapter cannot throw either |
 
@@ -603,12 +616,20 @@ partial update writes **only** `changeFields`; a failing `afterSave` rolls the
 delete back; a `SelectExpr` projection maps back onto the entity and leaves
 unselected columns at their defaults; Mapster's `IgnoreNullValues` keeps a column
 the command did not mention; a throwing repository becomes `Result=Failed`
-instead of an exception; and a failing control stops the add before the
-repository is touched.
+instead of an exception; a failing control stops the add before the repository is
+touched; the whole filter vocabulary translates to SQL and composes with
+`InnerFilterId` OR-groups; an unknown filter or sort column fails with its name,
+never silently; and a Redis server at a closed port yields a cache miss instead
+of an exception.
+
+One finding from the filter tests that Phase 3 will care about: `Contains`
+compiles to a case-**sensitive** substring match (both in .NET and in Npgsql's
+`LIKE`), so a case-insensitive search box needs explicit lowering on both sides —
+which is exactly what `ProductExtensions.Search` already does.
 
 **Not in the kernel yet, on purpose:** `AddMediatR` is not wired in `Program.cs`
-and no controller uses `IMediator`. That is the first step of Phase 2, together
-with the first real slice.
+and no controller uses `IMediator`. That is the first step of the Products slice,
+together with the first real slice.
 
 ---
 
@@ -674,14 +695,15 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 
 | Phase | Slice | Notes |
 | --- | --- | --- |
-| 2 | Products | reference slice: `ProductListQuery`/`ProductDetailQuery`/`ProductFiltersQuery`/`Create|Update|DeleteProductCommand`, `ProductControls`, `IImageStorage`; `ProductMcpTools` moves onto `IMediator` with identical tool names |
-| 3 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
-| 4 | Orders | basket→order conversion is the `afterSave`/unit-of-work shape; stock rules go in `OrderControls` |
-| 5 | Account | `ITokenGenerator` + `IIdentityService`; basket merge on login |
-| 6 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
-| 7 | API shell | `Program.cs` slims; the envelope→HTTP decision (D1) lands here together with the client update |
-| 8 | Docs | `README.md` API section, `docs/architecture.md` |
-| 9 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
+| 2 | **Rename entities and primary keys** (D12) | `Product`→`ProductEntity` style names, `Id`→`<Entity>Id` keys, folders `OrderAggregare`→`OrderAggregate`; one migration of `RenameColumn`/`RenameTable` so data survives. DTOs keep `[JsonPropertyName("id")]`, so the wire keeps `"id"`. Also lands `[CheckKeyExists]` + the non-generic repository bases. No kernel changes needed — keys already come from EF metadata. |
+| 3 | Products | reference slice: `ProductListQuery`/`ProductDetailQuery`/`ProductFiltersQuery`/`Create|Update|DeleteProductCommand`, `ProductControls`, `IImageStorage`; `ProductMcpTools` moves onto `IMediator` with identical tool names |
+| 4 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
+| 5 | Orders | basket→order conversion is the `afterSave`/unit-of-work shape; stock rules go in `OrderControls` |
+| 6 | Account | `ITokenGenerator` + `IIdentityService`; basket merge on login |
+| 7 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
+| 8 | API shell | `Program.cs` slims; `AddMediatR` + the envelope→HTTP decision (D1) lands here together with the client update |
+| 9 | Docs | `README.md` API section, `docs/architecture.md` |
+| 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
 
 ---
 

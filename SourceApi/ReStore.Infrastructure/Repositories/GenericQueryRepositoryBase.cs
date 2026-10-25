@@ -128,7 +128,9 @@ namespace ReStore.Infrastructure.Repositories
                 if (paging.OnlyTotalCount)
                     return new DomainResponseList<Entity>(new List<Entity>(), totalCount);
 
-                query = ApplyOrdering(query, paging);
+                query = ApplyOrdering(query, paging, out var orderingError);
+                if (orderingError is not null)
+                    return new DomainResponseList<Entity>(orderingError);
 
                 if (!paging.DisablePaging)
                 {
@@ -222,20 +224,37 @@ namespace ReStore.Infrastructure.Repositories
         }
 
         /// <summary>
-        /// Applies OrderCols with Dynamic LINQ. Column names are validated against the
-        /// entity's properties first: the sort column arrives from the client, and an
-        /// unvalidated name here would be an injection point.
+        /// Applies OrderCols with Dynamic LINQ.
+        ///
+        /// The sort column arrives from the client, so two things happen before it is
+        /// used: a blank column is skipped, and a column that is not a public property
+        /// of the entity **fails the query with a message naming it** rather than being
+        /// silently dropped. EF parameterizes values, so this is not a SQL injection
+        /// surface; the real risks are parse errors, sorting by a column the API never
+        /// meant to expose, and unbounded sorts on unindexed columns.
         /// </summary>
-        private static IQueryable<Entity> ApplyOrdering(IQueryable<Entity> query, RequestPaging paging)
+        private static IQueryable<Entity> ApplyOrdering(
+            IQueryable<Entity> query,
+            RequestPaging paging,
+            out string? error)
         {
+            error = null;
+
             if (paging.OrderCols is not { Count: > 0 })
                 return query;
 
-            var clauses = paging.OrderCols
-                .Where(order => !string.IsNullOrWhiteSpace(order.FieldName))
-                .Where(order => FindProperty(order.FieldName!) is not null)
-                .Select(order => $"{order.FieldName} {(order.IsAscending ? "asc" : "desc")}")
-                .ToList();
+            var clauses = new List<string>();
+
+            foreach (var order in paging.OrderCols.Where(order => !string.IsNullOrWhiteSpace(order.FieldName)))
+            {
+                if (FindProperty(order.FieldName!) is null)
+                {
+                    error = $"Unknown sort column '{order.FieldName}' for {typeof(Entity).Name}.";
+                    return query;
+                }
+
+                clauses.Add($"{order.FieldName} {(order.IsAscending ? "asc" : "desc")}");
+            }
 
             return clauses.Count == 0 ? query : query.OrderBy(string.Join(", ", clauses));
         }

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using MediatR;
 using ReStore.Application.Common;
 using ReStore.Application.DTOs;
+using ReStore.Application.Filters;
 using ReStore.Application.Interfaces;
 using ReStore.Domain.Common;
 using ReStore.Domain.Interfaces.Common;
@@ -90,7 +91,9 @@ namespace ReStore.Application.Handlers.BaseHandlers
                 if (invalid is { Result: false })
                     return Error(invalid.Error);
 
-                var criteria = await BuildCriteria(query);
+                var (criteria, criteriaError) = await BuildCriteria(query);
+                if (criteriaError is not null)
+                    return Error(criteriaError);
 
                 var requestConfig = new RequestConfig<Entity>(SelectExpr);
                 if (criteria is not null)
@@ -112,7 +115,7 @@ namespace ReStore.Application.Handlers.BaseHandlers
             }
         }
 
-        private async Task<Expression<Func<Entity, bool>>?> BuildCriteria(Query query)
+        private async Task<(Expression<Func<Entity, bool>>? Criteria, string? Error)> BuildCriteria(Query query)
         {
             Expression<Func<Entity, bool>>? criteria = null;
 
@@ -124,7 +127,14 @@ namespace ReStore.Application.Handlers.BaseHandlers
             if (!string.IsNullOrWhiteSpace(query.FullSearchPhrase))
                 criteria = criteria.And(FullSearchExpr(query));
 
-            return criteria;
+            var (filters, filterError) = FilterExpressionBuilder.Build<Entity>(query.Filters);
+            if (filterError is not null)
+                return (null, filterError);
+
+            if (filters is not null)
+                criteria = criteria.And(filters);
+
+            return (criteria, null);
         }
 
         /// <summary>

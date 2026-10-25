@@ -256,22 +256,22 @@ public class GenericQueryRepositoryTests : IClassFixture<SqliteStore>
     }
 
     [Fact]
-    public async Task ListAsync_ignores_an_ordering_column_that_is_not_a_property()
+    public async Task ListAsync_fails_with_the_name_of_an_unknown_ordering_column()
     {
-        _store.SeedProduct(name: "Injection", brand: "InjectionBrand");
+        _store.SeedProduct(name: "BadSort", brand: "BadSortBrand");
 
         var repository = Repository();
         var config = new RequestConfig<Product>(product => new { product.Id, product.Name });
-        config.Specification.Criteria = product => product.Brand == "InjectionBrand";
+        config.Specification.Criteria = product => product.Brand == "BadSortBrand";
         config.PagingRequest.OrderCols = new()
         {
-            new Domain.Interfaces.Common.OrderInfo("Name; DROP TABLE Products", true)
+            new Domain.Interfaces.Common.OrderInfo("NotAColumn", true)
         };
 
         var result = await repository.ListAsync(config);
 
-        result.Result.Should().BeTrue();
-        result.Data.Should().HaveCount(1);
+        result.Result.Should().BeFalse("an unknown sort column is the caller's mistake, not something to ignore");
+        result.Error.Should().Contain("NotAColumn");
     }
 
     [Fact]
