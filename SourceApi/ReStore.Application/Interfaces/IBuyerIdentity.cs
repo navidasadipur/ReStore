@@ -16,6 +16,9 @@ namespace ReStore.Application.Interfaces
         /// </summary>
         string? BuyerId { get; }
 
+        /// <summary>The guest cookie independently of the current authenticated identity.</summary>
+        string? AnonymousBuyerId { get; }
+
         /// <summary>True when <see cref="BuyerId"/> came from an authenticated user.</summary>
         bool IsAuthenticated { get; }
 

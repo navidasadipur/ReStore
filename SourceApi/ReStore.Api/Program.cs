@@ -70,13 +70,6 @@ builder.Services
 
 builder.Services.AddCors();
 
-builder.Services.AddIdentityCore<User>(opt => 
-{
-    opt.User.RequireUniqueEmail = true;
-})
-    .AddRoles<Role>()
-    .AddEntityFrameworkStores<StoreContext>();
-
 // Fail loudly at startup rather than with a NullReferenceException on the
 // first request. In production this comes from JWTSettings__TokenKey.
 var tokenKey = builder.Configuration["JWTSettings:TokenKey"]
@@ -104,7 +97,6 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IBuyerIdentity, HttpBuyerIdentity>();
 
-builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<PaymentService>();
 
 var app = builder.Build();

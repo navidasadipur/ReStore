@@ -1,7 +1,7 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Phases 0–5 implemented** — project split, shared kernel, filters,
-entity/key renames, Products, Basket and Orders. Account is next. Remaining React work
+Status: **Phases 0–6 implemented** — project split, shared kernel, filters,
+entity/key renames, Products, Basket, Orders and Account. Payments is next. Remaining React work
 is deferred to the dedicated client phase after the backend contracts settle.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
@@ -702,7 +702,7 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 3 | Products | reference slice: `ProductListQuery`/`ProductDetailQuery`/`ProductFiltersQuery`/`Create|Update|DeleteProductCommand`, `ProductControls`, `IImageStorage`; `ProductMcpTools` moves onto `IMediator` with identical tool names |
 | 4 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
 | 5 | Orders — implemented | Dedicated checkout repository owns one serializable transaction and one `SaveChanges`; stock rules live in `OrderControls`. See §8.5. |
-| 6 | Account | `ITokenGenerator` + `IIdentityService`; basket merge on login |
+| 6 | Account — implemented | `ITokenGenerator` + `IIdentityService`; transactional guest-basket transfer on login, preserving the legacy replacement rule. See §8.6. |
 | 7 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
 | 8 | API shell | `Program.cs` slims; finish envelope consistency (D1). `AddMediatR` is already wired. |
 | 8a | **React client contract migration** | After backend Phases 5–8, adapt `agent.ts`, Redux and forms to the final API contracts; reconcile `searchTerm`/`FullSearchPhrase`, filters/sorting, paging metadata and empty-basket handling. Fix pagination to use the effective requested page size rather than `returnCount`. Verify with `npm ci`, `npm run build` and catalog/search/filter/paging, basket, account, checkout and payment flows. No further client changes before this phase. |
@@ -974,6 +974,67 @@ create returned HTTP 200 with `succeeded:false`. This exercises routing, DI,
 MediatR dispatch and database failure envelopes. Windows EventLog logging was
 disabled only in the smoke process because the sandbox cannot write EventLog;
 no application configuration was changed for that workaround.
+
+### 8.6 Phase 6 — executed: the Account slice
+
+Orders was committed as `352cbd0`
+(`Move orders to CQRS with atomic checkout and buyer-scoped reads`).
+
+| Layer | Added / changed |
+| --- | --- |
+| Application | `LoginCommand`, `RegisterCommand`, `CurrentUserQuery`, `SavedAddressQuery`, handlers, `UserDto`/`UserAddressDto`, `IIdentityService`, `ITokenGenerator`, `IAccountBasketRepository` |
+| Infrastructure | `IdentityService`, `JwtTokenGenerator`, `AccountBasketRepository`; Identity registration moved from Program into the composition root |
+| Api | `AccountController` binds commands and dispatches through MediatR; old login/register/user DTOs and `TokenService` removed |
+
+**Identity keeps its own validation pipeline.** `User` is an ASP.NET Identity
+entity, not a `BaseEntity`, so registration uses UserManager's existing username,
+email and password validators rather than forcing Identity through generic CRUD
+controls. Unique-email policy, Member role assignment, HS512 signing, name/email/
+role claims and seven-day UTC token expiry are preserved. The JWT package reference
+in Infrastructure uses 8.19.2, the version already resolved by the API.
+
+Registration wraps user creation and Member assignment in one transaction, checks
+both Identity results and rolls everything back if either fails. Validation
+messages and Identity error codes go into the failed InsertReturn.
+
+**Guest-basket transfer preserves legacy behaviour.** If a guest basket exists,
+it replaces the previous account basket; quantities from the two baskets are not
+combined. The transfer and old-basket deletion run in one serializable transaction.
+Token creation happens before transfer, and the cookie is cleared only after a
+successful response. The stored username is used, not the login's casing. Without
+a guest basket, the existing account basket is returned unchanged.
+
+`IBuyerIdentity.AnonymousBuyerId` exposes the guest cookie independently of the
+authenticated identity. The transfer repository only accepts generated GUID-shaped
+guest IDs, so a cookie containing another account's username cannot transfer that
+account's basket. No HTTP types enter Application.
+
+Current-user and saved-address handlers enforce an authenticated buyer; missing
+accounts and database failures become failed envelopes. No saved address is a
+successful response with null data. Current-user does not hide basket read errors.
+
+**Wire contract:** existing routes are retained. Login/currentUser return
+`DtoReturnOne<UserDto>` containing `email`, `token`, `basket`; registration returns
+`InsertReturn` with the user key; savedAddress returns `DtoReturnOne<UserAddressDto>`
+with the existing address fields. Handled failures return HTTP 200 with
+`succeeded:false`; protected routes still reject missing/invalid authentication.
+React is unchanged: adapting its account thunks, form errors and registration's
+old 201 response belongs to Phase 8a. No schema migration is needed.
+
+**Verification:** all **99 tests passed** (12 new Account cases), including real
+UserManager password hashing/role membership, signed-token validation, invalid
+credentials, case-insensitive login, guest transfer with/without an existing account
+basket, forged username cookies, rollback after actual transfer writes, token
+failure, registration rollback on missing role, current-user/address access and
+basket read failure propagation. API build succeeded with zero errors; the two
+remaining warnings in PaymentsController predate this phase.
+
+**HTTP smoke:** with the database deliberately unreachable, currentUser and
+savedAddress returned 401 anonymously and HTTP 200 failed envelopes with a test
+JWT. Login and registration returned HTTP 200 failed envelopes for empty input and
+for database failures. This verifies routing, DI and dispatch; successful database
+flows were tested with SQLite, not PostgreSQL. The smoke process alone disabled
+Windows EventLog logging as in Phase 5.
 
 ## 9. Deferred infrastructure — the switch-on runbook
 

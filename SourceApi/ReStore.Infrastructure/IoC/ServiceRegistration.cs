@@ -1,6 +1,7 @@
 using System;
 using Mapster;
 using MapsterMapper;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -76,6 +77,16 @@ namespace ReStore.Infrastructure.IoC
             AddProductSlice(services);
             AddBasketSlice(services);
             AddOrderSlice(services);
+            AddAccountSlice(services);
+        }
+
+        private static void AddAccountSlice(IServiceCollection services)
+        {
+            services.AddIdentityCore<User>(options => options.User.RequireUniqueEmail = true)
+                .AddRoles<Role>().AddEntityFrameworkStores<StoreContext>();
+            services.AddScoped<IIdentityService, IdentityService>();
+            services.AddScoped<ITokenGenerator, JwtTokenGenerator>();
+            services.AddScoped<IAccountBasketRepository, AccountBasketRepository>();
         }
 
         private static void AddOrderSlice(IServiceCollection services)

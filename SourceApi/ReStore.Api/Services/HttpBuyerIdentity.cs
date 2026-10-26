@@ -45,6 +45,8 @@ namespace ReStore.Api.Services
 
         public bool IsAuthenticated => !string.IsNullOrWhiteSpace(Context?.User?.Identity?.Name);
 
+        public string? AnonymousBuyerId => Context?.Request.Cookies[CookieName];
+
         public string CreateAnonymousBuyerId()
         {
             var buyerId = Guid.NewGuid().ToString();

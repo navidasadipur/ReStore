@@ -14,6 +14,7 @@
     <PackageReference Include="System.Linq.Dynamic.Core" Version="1.7.1" />
     <!-- Image storage adapter (IImageStorage). -->
     <PackageReference Include="CloudinaryDotNet" Version="1.20.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
   </ItemGroup>
 
   <ItemGroup>

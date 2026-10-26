@@ -19,6 +19,8 @@ public sealed class FakeBuyerIdentity : IBuyerIdentity
 {
     public string? BuyerId { get; set; }
 
+    public string? AnonymousBuyerId { get; set; }
+
     public bool IsAuthenticated { get; private set; }
 
     public int AnonymousIdsCreated { get; private set; }
@@ -29,13 +31,16 @@ public sealed class FakeBuyerIdentity : IBuyerIdentity
     {
         AnonymousIdsCreated++;
         BuyerId = $"anonymous-{AnonymousIdsCreated}-{Guid.NewGuid():N}";
+        AnonymousBuyerId = BuyerId;
         return BuyerId;
     }
 
     public void ClearAnonymousBuyerId()
     {
         CookieCleared = true;
-        BuyerId = null;
+        AnonymousBuyerId = null;
+        if (!IsAuthenticated)
+            BuyerId = null;
     }
 
     public FakeBuyerIdentity AsAuthenticated(string userName)
