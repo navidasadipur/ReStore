@@ -1,7 +1,7 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Phases 0–4 implemented** — project split, shared kernel, filters,
-entity/key renames, Products and Basket. Orders is next. Remaining React work
+Status: **Phases 0–5 implemented** — project split, shared kernel, filters,
+entity/key renames, Products, Basket and Orders. Account is next. Remaining React work
 is deferred to the dedicated client phase after the backend contracts settle.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
@@ -701,7 +701,7 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 2 | **Rename entities and primary keys** (D12) | `Product`→`ProductEntity` style names, `Id`→`<Entity>Id` keys, folders `OrderAggregare`→`OrderAggregate`; one migration of `RenameColumn`/`RenameTable` so data survives. DTOs keep `[JsonPropertyName("id")]`, so the wire keeps `"id"`. Also lands `[CheckKeyExists]` + the non-generic repository bases. No kernel changes needed — keys already come from EF metadata. |
 | 3 | Products | reference slice: `ProductListQuery`/`ProductDetailQuery`/`ProductFiltersQuery`/`Create|Update|DeleteProductCommand`, `ProductControls`, `IImageStorage`; `ProductMcpTools` moves onto `IMediator` with identical tool names |
 | 4 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
-| 5 | Orders | basket→order conversion is the `afterSave`/unit-of-work shape; stock rules go in `OrderControls` |
+| 5 | Orders — implemented | Dedicated checkout repository owns one serializable transaction and one `SaveChanges`; stock rules live in `OrderControls`. See §8.5. |
 | 6 | Account | `ITokenGenerator` + `IIdentityService`; basket merge on login |
 | 7 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
 | 8 | API shell | `Program.cs` slims; finish envelope consistency (D1). `AddMediatR` is already wired. |
@@ -913,6 +913,67 @@ client adaptations remain historical work, not proof that the client migration i
 complete. Search parameter alignment and pagination are tracked in that phase.
 Feature validation stays in specific controls derived from `BaseControls<T>`;
 this follow-up does not expand product update validation or the generic controls.
+
+### 8.5 Phase 5 — executed: the Orders slice
+
+The preceding Basket correction and client-phase plan were committed as
+`4b8cbfa` (`Preserve basket read failures and schedule the React contract migration`).
+
+| Layer | Added / changed |
+| --- | --- |
+| Application | `CreateOrderCommand`, `OrderListQuery`, `OrderDetailQuery`, handlers, `OrderControls : BaseControls<OrderEntity>`, `IOrderRepository`, `OrderDto`/`OrderItemDto` |
+| Infrastructure | `OrderRepository` and scoped registrations for the repository and controls |
+| Api | `OrdersController` binds the command/query directly and sends it through MediatR; old `CreateOrderDto`, order DTOs and `OrderExtensions` removed |
+
+**Transaction ownership is explicit.** Checkout is not a generic single-row add:
+the dedicated repository loads the buyer's basket and products, runs
+`OrderControls`, builds item/price/address snapshots, optionally creates or updates
+the user's address, reduces stock and removes the basket. It saves once inside a
+serializable transaction. No generic write repository is called, so its
+`ChangeTracker.Clear()` cannot detach pending checkout changes. The checkout
+repository clears its own tracking only when the operation finishes. Disposal
+rolls the transaction back on failure, including an exception after the database
+writes but before commit.
+
+Serializable isolation is chosen to prevent concurrent checkouts from committing
+against the same basket or stale product stock. Conflicts return a failed envelope;
+there is no automatic checkout retry. This concurrency behaviour still requires
+verification against a real PostgreSQL server.
+
+**Controls own the rules.** Missing/empty baskets, nonpositive line quantities,
+unavailable products, insufficient stock and missing shipping addresses fail
+without consuming the basket. The delivery rule is preserved: subtotal greater
+than 10000 gets free delivery, otherwise 500. Existing saved addresses are updated
+in place. Products without an image use an empty image URL in the order snapshot,
+which fits the existing non-null snapshot column without changing the schema.
+
+**Reads use the kernel.** The list and detail handlers inherit the base query
+handlers, including filtering, sorting and paging. Both enforce an authenticated
+buyer and add ownership criteria which client filters cannot remove. Nested item
+snapshots and shipping addresses are projected and mapped to the Application DTOs.
+Detail returns the same not-found failure for missing and another buyer's orders.
+
+**Wire contract:** list returns `PaginatedResponseListDto<OrderDto>`, detail returns
+`DtoReturnOne<OrderDto>`, create returns `InsertReturn` with the new order key.
+Routes and `[Authorize]` remain; successful dispatches return HTTP 200 with the
+outcome in the body. The list now uses kernel paging (`PagingInfo.PageNumber`,
+`PagingInfo.PageRecordCount`, default 25) and newest-first ordering. DTO fields
+retain `id`, `buyerId`, `orderItems`, totals and the status string. React is
+deliberately unchanged; adapting Orders' old raw list/id responses is Phase 8a work.
+
+**Verification:** API build succeeded with zero errors (existing nullable warnings
+remain). All **87 tests passed**, including 11 new Orders cases covering checkout,
+delivery threshold, new/existing saved address, missing/empty basket, insufficient
+stock, missing address, rollback after actual writes, ownership, nested snapshots,
+filtering/paging and anonymous access. SQLite verifies relational persistence and
+rollback; no real PostgreSQL write or simultaneous checkout test was run.
+
+**HTTP smoke:** with a deliberately unreachable local database and a temporary test
+JWT key, anonymous `GET /api/orders` returned 401; authenticated list, detail and
+create returned HTTP 200 with `succeeded:false`. This exercises routing, DI,
+MediatR dispatch and database failure envelopes. Windows EventLog logging was
+disabled only in the smoke process because the sandbox cannot write EventLog;
+no application configuration was changed for that workaround.
 
 ## 9. Deferred infrastructure — the switch-on runbook
 

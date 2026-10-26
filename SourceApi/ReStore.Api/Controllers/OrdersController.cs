@@ -1,132 +1,28 @@
-using ReStore.Infrastructure.Persistence;
-using ReStore.Api.DTOs;
-using ReStore.Domain.Entities;
-using ReStore.Domain.Entities.OrderAggregare;
-using ReStore.Api.Extensions;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using ReStore.Application.Commands;
+using ReStore.Application.Common;
+using ReStore.Application.DTOs;
+using ReStore.Application.Queries;
 
-namespace ReStore.Api.Controllers
+namespace ReStore.Api.Controllers;
+
+[Authorize]
+public class OrdersController(IMediator mediator) : BaseApiController
 {
-    [Authorize]
-    public class OrdersController : BaseApiController
-    {
-        private readonly ILogger<OrdersController> _logger;
-        private readonly StoreContext _context;
+    [HttpGet]
+    public async Task<PaginatedResponseListDto<OrderDto>> GetOrders(
+        [FromQuery] OrderListQuery query, CancellationToken cancellationToken)
+        => await mediator.Send(query, cancellationToken);
 
-        public OrdersController(StoreContext context, ILogger<OrdersController> logger)
-        {
-            _context = context;
-            _logger = logger;
-        }
+    [HttpGet("{id:int}", Name = "GetOrder")]
+    public async Task<DtoReturnOne<OrderDto>> GetOrder(
+        [FromRoute] OrderDetailQuery query, CancellationToken cancellationToken)
+        => await mediator.Send(query, cancellationToken);
 
-        [HttpGet]
-        public async Task<ActionResult<List<OrderDto>>> GetOrders()
-        {
-            return await _context.Orders
-                .ProjectOrderToOrderDto()
-                .Where(x => x.BuyerId == User.Identity.Name)
-                .ToListAsync();
-        }
-
-        [HttpGet("{id}", Name = "GetOrder")]
-        public async Task<ActionResult<OrderDto>> GetOrder(int id)
-        {
-            return await _context.Orders
-                .ProjectOrderToOrderDto()
-                .Where(o => o.BuyerId == User.Identity.Name && o.Id == id)
-                .FirstOrDefaultAsync();
-        }
-
-        [HttpPost]
-        public async Task<ActionResult<int>> CreateOrder(CreateOrderDto orderDto)
-        {
-            var basket = await _context.Baskets
-                .RetrieveBasketWithItems(User.Identity.Name)
-                .FirstOrDefaultAsync();
-
-            if (basket == null) return BadRequest(new ProblemDetails{Title = "Could no locate basket"});
-
-            var items = new List<OrderItemEntity>();
-
-            foreach (var item in basket.Items)
-            {
-                var productItem = await _context.Products.FindAsync(item.ProductId);
-
-                // The product may have been deleted after it went in the basket.
-                if (productItem == null)
-                    return BadRequest(new ProblemDetails
-                    {
-                        Title = "A product in your basket is no longer available"
-                    });
-
-                if (productItem.QuantityInStock < item.Quantity)
-                    return BadRequest(new ProblemDetails
-                    {
-                        Title = $"Not enough {productItem.Name} in stock"
-                    });
-
-                var itemOrdered = new ProductItemOrdered
-                {
-                    ProductId = productItem.ProductId,
-                    Name = productItem.Name,
-                    PictureUrl = productItem.PictureUrl
-                };
-
-                var orderItem = new OrderItemEntity
-                {
-                    ItemOrdered = itemOrdered,
-                    Price = productItem.Price,
-                    Quantity = item.Quantity
-                };
-
-                items.Add(orderItem);
-                
-                productItem.QuantityInStock -= item.Quantity;
-            }
-
-            var subtotal = items.Sum(item => item.Price * item.Quantity);
-            var deliveryFee = subtotal > 10000 ? 0 : 500;
-
-            var order = new OrderEntity
-            {
-                OrderItems = items,
-                BuyerId = User.Identity.Name,
-                ShippingAddress = orderDto.ShippingAddress,
-                SubTotal = subtotal,
-                DeliveryFee = deliveryFee,
-                PaymentIntentId = basket.PaymentIntentId
-            };
-
-            _context.Orders.Add(order);
-            _context.Baskets.Remove(basket);
-
-            if (orderDto.SaveAddress)
-            {
-                var user = await _context.Users
-                    .Include(a => a.Address)
-                    .FirstOrDefaultAsync(x => x.UserName == User.Identity.Name);
-
-                var address = new UserAddress
-                {
-                    FullName = orderDto.ShippingAddress.FullName,
-                    Address1 = orderDto.ShippingAddress.Address1,
-                    Address2 = orderDto.ShippingAddress.Address2,
-                    City = orderDto.ShippingAddress.City,
-                    State = orderDto.ShippingAddress.State,
-                    Zip = orderDto.ShippingAddress.Zip,
-                    Country = orderDto.ShippingAddress.Country,
-                };
-
-                user.Address = address;
-            }
-
-            var result = await _context.SaveChangesAsync() > 0;
-
-            if (result) return CreatedAtRoute("GetOrder", new {id = order.OrderId}, order.OrderId);
-
-            return BadRequest("Problem creating order");
-        }
-    }
+    [HttpPost]
+    public async Task<InsertReturn> CreateOrder(
+        [FromBody] CreateOrderCommand command, CancellationToken cancellationToken)
+        => await mediator.Send(command, cancellationToken);
 }

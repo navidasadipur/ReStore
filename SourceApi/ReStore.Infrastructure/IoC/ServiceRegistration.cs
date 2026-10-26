@@ -8,6 +8,7 @@ using ReStore.Application.Common;
 using ReStore.Application.Controls;
 using ReStore.Application.Interfaces;
 using ReStore.Domain.Entities;
+using ReStore.Domain.Entities.OrderAggregare;
 using ReStore.Domain.Interfaces.Repository;
 using ReStore.Infrastructure.Caching;
 using ReStore.Infrastructure.Mapping;
@@ -74,6 +75,14 @@ namespace ReStore.Infrastructure.IoC
 
             AddProductSlice(services);
             AddBasketSlice(services);
+            AddOrderSlice(services);
+        }
+
+        private static void AddOrderSlice(IServiceCollection services)
+        {
+            services.AddScoped<OrderControls>();
+            services.AddScoped<IControls<OrderEntity>>(provider => provider.GetRequiredService<OrderControls>());
+            services.AddScoped<IOrderRepository, OrderRepository>();
         }
 
         /// <summary>Basket: aggregate access; the buyer identity itself is supplied by the Api project.</summary>
