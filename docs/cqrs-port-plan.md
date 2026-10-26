@@ -1,6 +1,8 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **plan only** — no code has been changed. Only this file is new.
+Status: **Phases 0–4 implemented** — project split, shared kernel, filters,
+entity/key renames, Products and Basket. Orders is next. Remaining React work
+is deferred to the dedicated client phase after the backend contracts settle.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
 
@@ -702,7 +704,8 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 5 | Orders | basket→order conversion is the `afterSave`/unit-of-work shape; stock rules go in `OrderControls` |
 | 6 | Account | `ITokenGenerator` + `IIdentityService`; basket merge on login |
 | 7 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
-| 8 | API shell | `Program.cs` slims; `AddMediatR` + the envelope→HTTP decision (D1) lands here together with the client update |
+| 8 | API shell | `Program.cs` slims; finish envelope consistency (D1). `AddMediatR` is already wired. |
+| 8a | **React client contract migration** | After backend Phases 5–8, adapt `agent.ts`, Redux and forms to the final API contracts; reconcile `searchTerm`/`FullSearchPhrase`, filters/sorting, paging metadata and empty-basket handling. Fix pagination to use the effective requested page size rather than `returnCount`. Verify with `npm ci`, `npm run build` and catalog/search/filter/paging, basket, account, checkout and payment flows. No further client changes before this phase. |
 | 9 | Docs | `README.md` API section, `docs/architecture.md` |
 | 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
 
@@ -895,6 +898,21 @@ remove-without-basket being a no-op.
 `IBuyerIdentity` and `IBasketRepository` with no startup errors.
 
 ---
+
+### 8.4 Review follow-up — Basket read failures and deferred client work
+
+Basket reads now distinguish absence from failure: the repository returns a
+successful response with null data when no basket exists, while database errors
+remain failed responses. The query logs the failure and returns a failed envelope
+instead of converting it into an empty success. A regression test exercises a real
+EF read against an SQLite database without a schema; the existing missing-basket
+test also checks the repository's successful-null contract.
+
+Further React changes are explicitly deferred to Phase 8a. Earlier Products/Basket
+client adaptations remain historical work, not proof that the client migration is
+complete. Search parameter alignment and pagination are tracked in that phase.
+Feature validation stays in specific controls derived from `BaseControls<T>`;
+this follow-up does not expand product update validation or the generic controls.
 
 ## 9. Deferred infrastructure — the switch-on runbook
 

@@ -18,7 +18,7 @@ namespace ReStore.Application.Interfaces
     /// </summary>
     public interface IBasketRepository
     {
-        /// <summary>Reads a basket with items and products, untracked. Missing basket = failed response with no data.</summary>
+        /// <summary>Reads a basket with items and products, untracked. Missing basket = success with no data; read errors = failure.</summary>
         Task<DomainResponseOne<BasketEntity>> GetWithItemsAsync(
             string buyerId,
             CancellationToken cancellationToken = default);

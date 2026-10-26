@@ -1,7 +1,3 @@
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ReStore.Application.Commands;
@@ -9,6 +5,7 @@ using ReStore.Application.Handlers.CommandHandlers;
 using ReStore.Application.Handlers.QueryHandlers;
 using ReStore.Application.Interfaces;
 using ReStore.Application.Queries;
+using ReStore.Infrastructure.Persistence;
 using ReStore.Infrastructure.Repositories;
 using Xunit;
 
@@ -71,11 +68,35 @@ public class BasketSliceTests : IClassFixture<SqliteStore>
     {
         var buyer = new FakeBuyerIdentity { BuyerId = "no-basket-buyer" };
 
+        var response = await Repository().GetWithItemsAsync(buyer.BuyerId);
+        response.Result.Should().BeTrue();
+        response.Data.Should().BeNull();
+
         var result = await QueryHandler(buyer).Handle(new BasketQuery(), CancellationToken.None);
 
         result.Result.Should().BeTrue("an empty basket is not an error");
         result.Data.Should().BeNull();
         result.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_database_read_failure_is_not_reported_as_an_empty_success()
+    {
+        // A separate database without a schema makes the real EF read fail without
+        // damaging the shared fixture or requiring an external database server.
+        var options = new DbContextOptionsBuilder<StoreContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        await using var context = new StoreContext(options);
+        var repository = new BasketRepository(context);
+        var buyer = new FakeBuyerIdentity { BuyerId = "database-failure-buyer" };
+        var handler = new BasketQueryHandler(repository, buyer, new NoopAppLogger());
+
+        var result = await handler.Handle(new BasketQuery(), CancellationToken.None);
+
+        result.Result.Should().BeFalse();
+        result.Error.Should().NotBeNullOrWhiteSpace();
+        result.Data.Should().BeNull();
     }
 
     [Fact]

@@ -1,6 +1,3 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using ReStore.Application.Interfaces;
 using ReStore.Domain.Entities;
@@ -37,7 +34,7 @@ namespace ReStore.Infrastructure.Repositories
                     .SingleOrDefaultAsync(basket => basket.BuyerId == buyerId, cancellationToken);
 
                 return basket is null
-                    ? new DomainResponseOne<BasketEntity>($"No basket was found for buyer '{buyerId}'.")
+                    ? new DomainResponseOne<BasketEntity>()
                     : new DomainResponseOne<BasketEntity>(basket);
             }
             catch (Exception exception)

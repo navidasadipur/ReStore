@@ -57,9 +57,10 @@ namespace ReStore.Application.Handlers.QueryHandlers
 
             if (response.Result is false)
             {
-                // A basket that does not exist yet is not an error.
-                if (response.Data is null)
-                    return Empty();
+                if (response.Exception is not null)
+                    logger.LogError(response.Exception, nameof(BasketQueryHandler));
+                else
+                    logger.LogError(response.Error ?? "The basket could not be read.", nameof(BasketQueryHandler));
 
                 return Failure(response.Error);
             }
