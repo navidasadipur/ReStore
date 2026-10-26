@@ -1,3 +1,4 @@
+using ReStore.Application.DTOs;
 namespace ReStore.Api.DTOs
 {
     public class UserDto

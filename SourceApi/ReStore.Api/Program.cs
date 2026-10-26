@@ -6,6 +6,7 @@ using ReStore.Domain.Entities;
 using ReStore.Api.Middleware;
 using ReStore.Api.Mcp;
 using ReStore.Api.Services;
+using ReStore.Application.Interfaces;
 using ReStore.Application.Queries;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -97,6 +98,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 
 builder.Services.AddAuthorization();
+
+// The buyer identity is an HTTP concern (claims or the buyerId cookie), so it is
+// registered here rather than in Infrastructure; Application only sees IBuyerIdentity.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IBuyerIdentity, HttpBuyerIdentity>();
 
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<PaymentService>();

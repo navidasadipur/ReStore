@@ -179,10 +179,25 @@ const TestErrors = {
 }
 
 const Basket = {
-    get: () => requests.get('basket'),
-    addItem: (productId: number, quantity = 1) => requests.post(`basket?productId=${productId}&quantity=${quantity}`, {}),
-    removeItem: (productId: number, quantity = 1) => requests.delete(`basket?productId=${productId}&quantity=${quantity}`),
-
+    // An empty basket is a *successful* envelope with no data. The slice expects a
+    // rejection for "nothing to show" (which is what the old 404 produced), so this
+    // throws without a toast rather than showing an error to a first-time visitor.
+    get: async () => {
+        const envelope: Envelope<any> = await requests.get('basket');
+        if (!envelope.succeeded) fail(envelope.error);
+        if (!envelope.data) throw new Error('The basket is empty.');
+        return envelope.data;
+    },
+    addItem: async (productId: number, quantity = 1) => {
+        const envelope: Envelope<any> =
+            await requests.post(`basket?productId=${productId}&quantity=${quantity}`, {});
+        return unwrapOne(envelope);
+    },
+    removeItem: async (productId: number, quantity = 1) => {
+        const envelope: Envelope<any> =
+            await requests.delete(`basket?productId=${productId}&quantity=${quantity}`);
+        unwrapNothing(envelope);
+    }
 }
 
 const Account = {

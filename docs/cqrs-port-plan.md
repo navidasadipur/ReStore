@@ -845,6 +845,55 @@ fine and silently changes the wire contract (`user.basket` → `user.basketEntit
 The compiler cannot see it; only reading the DTO did. **DTO property names are
 part of the API contract and must never follow an entity rename.**
 
+### 8.3 Phase 4 — executed: the Basket slice
+
+| Layer | Added |
+| --- | --- |
+| Application | `IBuyerIdentity`, `IBasketRepository`, `BasketQuery`, `AddBasketItemCommand`, `RemoveBasketItemCommand` + handlers, `BasketDto`/`BasketItemDto` (moved from Api) with one `FromEntity` factory |
+| Infrastructure | `BasketRepository` |
+| Api | `HttpBuyerIdentity` (claims or the `buyerId` cookie, the only place that knows either), `BasketController` reduced to bind → `Send` → envelope |
+
+**`IBuyerIdentity` replaces the controller's private `GetBuyerId()`/`RetrieveBasket()`.**
+Authenticated users are identified by their name, everyone else by the cookie; the
+implementation writes the cookie, so `Application` never sees HttpContext. That
+also makes the handlers testable with a two-line fake.
+
+**The basket is an aggregate, so it does not use the base CRUD handlers.** Its
+rules ("the same product again increments one line", "removing more than present
+clears the line") already live on `BasketEntity`, and applying them needs *tracked*
+instances. Two flaws found and fixed while wiring it:
+
+1. **An untracked product in a tracked basket.** The first version loaded the
+   product through `IProductQueryRepository` (AsNoTracking) and passed it to
+   `basket.AddItem(...)`, which would have made EF treat the product as new and
+   try to INSERT it. The repository now loads the product tracked (`FindAsync`)
+   and does the load-mutate-save itself, so a handler cannot get the tracking
+   wrong.
+2. **Removing from a nonexistent basket created one.** The remove path shared the
+   get-or-create helper, leaving an empty basket row behind on every stale
+   request. Remove now loads without creating and answers with an empty basket.
+
+**"Empty basket" is a success, not an error.** `GET /api/basket` for a visitor
+with no basket returns `succeeded: true` with `data: null` — a first-time visitor
+is the normal case. On the client, `Basket.get` turns that into a rejection
+*without* a toast, which is exactly what the old 404 did, so the basket slice did
+not need changing.
+
+**`BasketExtensions.MapBasketToDto` survives for now** (account, orders and
+payments still read `StoreContext` directly) but delegates to
+`BasketDto.FromEntity`, so there is one mapping rather than two.
+
+**Tests: 8 new, 75 total** — empty basket, first add creating the basket and an
+anonymous id, repeat add merging lines, unknown product failing without creating
+a basket, zero quantity rejected, remove decrementing then clearing, an
+authenticated buyer using their user name and never getting a cookie, and
+remove-without-basket being a no-op.
+
+**Smoke (no database available):** `GET /api/basket` → 200
+`{"data":null,"result":true,"succeeded":true}`; `POST /api/basket?productId=1&quantity=2`
+→ 200 with `succeeded:false` and the connection error; `DELETE` → 200. DI resolves
+`IBuyerIdentity` and `IBasketRepository` with no startup errors.
+
 ---
 
 ## 9. Deferred infrastructure — the switch-on runbook

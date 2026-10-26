@@ -1,109 +1,44 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using ReStore.Infrastructure.Persistence;
-using ReStore.Api.DTOs;
-using ReStore.Domain.Entities;
-using ReStore.Api.Extensions;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using ReStore.Application.Commands;
+using ReStore.Application.DTOs;
+using ReStore.Application.Queries;
 
 namespace ReStore.Api.Controllers
 {
+    /// <summary>
+    /// The basket, in the same shape as Products: bind, one Send, return the envelope.
+    ///
+    /// The buyer is no longer worked out here — <c>IBuyerIdentity</c> answers that, and the
+    /// cookie is written by its implementation, so nothing in this controller touches
+    /// HttpContext or Identity any more.
+    /// </summary>
     public class BasketController : BaseApiController
     {
-        private readonly StoreContext _context;
-        public BasketController(StoreContext context)
-        {
-            _context = context;
+        private readonly IMediator _mediator;
 
-        }
+        public BasketController(IMediator mediator) => _mediator = mediator;
 
         [HttpGet(Name = "GetBasket")]
-        public async Task<ActionResult<BasketDto>> GetBasket()
-        {
-            var basket = await RetrieveBasket(GetBuyerId());
-
-            if (basket == null) return NotFound();
-
-            return basket.MapBasketToDto();
-        }
-
-
+        public async Task<DtoReturnOne<BasketDto>> GetBasket(CancellationToken cancellationToken)
+            => await _mediator.Send(new BasketQuery(), cancellationToken);
 
         [HttpPost]
-        public async Task<ActionResult<BasketDto>> AddItemToBasket(int productId, int quantity)
-        {
-            var basket = await RetrieveBasket(GetBuyerId());
-
-            if (basket == null) basket = CreateBasket();
-
-            var product = await _context.Products.FindAsync(productId);
-
-            if (product == null) return BadRequest(new ProblemDetails { Title = "Problem adding item to the basket" });
-
-            basket.AddItem(product, quantity);
-
-            var result = await _context.SaveChangesAsync() > 0;
-
-            if (result) return CreatedAtRoute("GetBasket", basket.MapBasketToDto());
-
-            return BadRequest(new ProblemDetails { Title = "Problem saving item to basket" });
-        }
+        public async Task<DtoReturnOne<BasketDto>> AddItemToBasket(
+            int productId,
+            int quantity,
+            CancellationToken cancellationToken)
+            => await _mediator.Send(
+                new AddBasketItemCommand { ProductId = productId, Quantity = quantity },
+                cancellationToken);
 
         [HttpDelete]
-        public async Task<ActionResult> RemoveBasketItem(int productId, int quantity)
-        {
-            var basket = await RetrieveBasket(GetBuyerId());
-
-            if (basket == null) return NotFound();
-
-            var product = await _context.Products.FindAsync(productId);
-
-            if (product == null) return BadRequest(new ProblemDetails { Title = "Problem removing item from the basket" });
-
-            basket.RemoveItem(productId, quantity);
-
-            var result = await _context.SaveChangesAsync() > 0;
-
-            if (result) return Ok();
-
-            return BadRequest(new ProblemDetails { Title = "Problem remove item from basket" });
-        }
-
-        private async Task<BasketEntity> RetrieveBasket(string buyerId)
-        {
-            if (string.IsNullOrEmpty(buyerId))
-            {
-                Response.Cookies.Delete("buyerId");
-                return null;
-            }
-
-            return await _context.Baskets
-                .Include(i => i.Items)
-                .ThenInclude(p => p.Product)
-                .FirstOrDefaultAsync(x => x.BuyerId == buyerId);
-        }
-
-        private string GetBuyerId()
-        {
-            return User.Identity?.Name ?? Request.Cookies["buyerId"];
-        }
-
-        private BasketEntity? CreateBasket()
-        {
-            var buyerId = User.Identity?.Name;
-            if (string.IsNullOrEmpty(buyerId))
-            {
-                buyerId = Guid.NewGuid().ToString();
-                var cookieOptions = new CookieOptions { IsEssential = true, Expires = DateTime.Now.AddDays(30) };
-                Response.Cookies.Append("buyerId", buyerId, cookieOptions);
-            }
-
-            var basket = new BasketEntity { BuyerId = buyerId };
-            _context.Baskets.Add(basket);
-            return basket;
-        }
+        public async Task<DtoReturnOne<BasketDto>> RemoveBasketItem(
+            int productId,
+            int quantity,
+            CancellationToken cancellationToken)
+            => await _mediator.Send(
+                new RemoveBasketItemCommand { ProductId = productId, Quantity = quantity },
+                cancellationToken);
     }
 }

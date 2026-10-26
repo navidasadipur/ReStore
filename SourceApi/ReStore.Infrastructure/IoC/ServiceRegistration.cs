@@ -73,7 +73,12 @@ namespace ReStore.Infrastructure.IoC
             services.AddScoped(typeof(IControls<>), typeof(BaseControls<>));
 
             AddProductSlice(services);
+            AddBasketSlice(services);
         }
+
+        /// <summary>Basket: aggregate access; the buyer identity itself is supplied by the Api project.</summary>
+        private static void AddBasketSlice(IServiceCollection services)
+            => services.AddScoped<IBasketRepository, BasketRepository>();
 
         /// <summary>Products: its own control, its own read repository, and image storage.</summary>
         private static void AddProductSlice(IServiceCollection services)
