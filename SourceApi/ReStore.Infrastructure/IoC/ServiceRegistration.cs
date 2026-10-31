@@ -78,6 +78,14 @@ namespace ReStore.Infrastructure.IoC
             AddBasketSlice(services);
             AddOrderSlice(services);
             AddAccountSlice(services);
+            AddPaymentSlice(services);
+        }
+
+        private static void AddPaymentSlice(IServiceCollection services)
+        {
+            services.AddScoped<PaymentControls>();
+            services.AddScoped<IPaymentGateway, StripePaymentGateway>();
+            services.AddScoped<IPaymentRepository, PaymentRepository>();
         }
 
         private static void AddAccountSlice(IServiceCollection services)

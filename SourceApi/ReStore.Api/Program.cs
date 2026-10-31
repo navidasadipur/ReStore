@@ -97,8 +97,6 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IBuyerIdentity, HttpBuyerIdentity>();
 
-builder.Services.AddScoped<PaymentService>();
-
 var app = builder.Build();
 
 //data seeding

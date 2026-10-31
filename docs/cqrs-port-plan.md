@@ -1,7 +1,7 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Phases 0–6 implemented** — project split, shared kernel, filters,
-entity/key renames, Products, Basket, Orders and Account. Payments is next. Remaining React work
+Status: **Phases 0–7 implemented** — project split, shared kernel, filters,
+entity/key renames, Products, Basket, Orders, Account and Payments. API shell is next. Remaining React work
 is deferred to the dedicated client phase after the backend contracts settle.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
@@ -703,7 +703,7 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 4 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
 | 5 | Orders — implemented | Dedicated checkout repository owns one serializable transaction and one `SaveChanges`; stock rules live in `OrderControls`. See §8.5. |
 | 6 | Account — implemented | `ITokenGenerator` + `IIdentityService`; transactional guest-basket transfer on login, preserving the legacy replacement rule. See §8.6. |
-| 7 | Payments | `IPaymentGateway`; webhook must keep returning 200 `EmptyResult()` for unknown/pending events |
+| 7 | Payments — implemented | `IPaymentGateway`, CQRS payment commands, guarded payment-column updates and verified webhook processing; unknown/pending events keep HTTP 200 `EmptyResult()`. See §8.7. |
 | 8 | API shell | `Program.cs` slims; finish envelope consistency (D1). `AddMediatR` is already wired. |
 | 8a | **React client contract migration** | After backend Phases 5–8, adapt `agent.ts`, Redux and forms to the final API contracts; reconcile `searchTerm`/`FullSearchPhrase`, filters/sorting, paging metadata and empty-basket handling. Fix pagination to use the effective requested page size rather than `returnCount`. Verify with `npm ci`, `npm run build` and catalog/search/filter/paging, basket, account, checkout and payment flows. No further client changes before this phase. |
 | 9 | Docs | `README.md` API section, `docs/architecture.md` |
@@ -1035,6 +1035,73 @@ JWT. Login and registration returned HTTP 200 failed envelopes for empty input a
 for database failures. This verifies routing, DI and dispatch; successful database
 flows were tested with SQLite, not PostgreSQL. The smoke process alone disabled
 Windows EventLog logging as in Phase 5.
+
+### 8.7 Phase 7 — executed: the Payments slice
+
+Account was committed as `2552ff8`
+(`Move account flows to CQRS with transactional registration and basket transfer`).
+
+| Layer | Added / changed |
+| --- | --- |
+| Application | `CreateOrUpdatePaymentIntentCommand`, `ProcessPaymentWebhookCommand`, handlers, `PaymentControls : BaseControls<BasketEntity>`, `IPaymentGateway`, `IPaymentRepository`, provider-neutral payment records |
+| Infrastructure | `StripePaymentGateway`, `PaymentRepository`, scoped registrations; Stripe.net 41.15.0 moved from Api to Infrastructure without a version change |
+| Api | PaymentsController delegates through MediatR; webhook retains a raw-body adapter for signature verification; old PaymentService and now-unused BasketExtensions removed |
+
+**Payment intent requests** require an authenticated buyer, load that buyer's
+basket, reject missing/empty or invalid lines, and calculate the amount from
+database prices with checked arithmetic. The USD/card flow and delivery threshold
+are preserved. A deterministic idempotency key includes the basket, existing
+intent and amount so the same gateway operation can be retried consistently.
+The Stripe client is configured per adapter call instead of mutating the SDK's
+global API key. No connection is made during startup.
+
+Only payment columns are saved, using one guarded SQL UPDATE keyed by basket ID,
+buyer and expected/current intent. This avoids attaching the product graph and
+rejects a basket transferred, deleted or assigned a competing intent while Stripe
+was being called. Repeated requests may succeed even when the intent/secret values
+are unchanged; they no longer depend on SaveChanges returning a positive count.
+
+Stripe and the database do not share a transaction. If Stripe succeeds and the
+database save fails, the request returns a failed envelope; idempotency supports
+retrying the same gateway operation. No distributed transaction, payment ledger or
+reconciliation subsystem is introduced in this refactor.
+
+**Webhook protocol is an explicit exception to D1's browser envelope contract.**
+The adapter uses Stripe's signature verification on the exact raw JSON before
+interpreting any data. Valid unrelated events, pending charges and charges without
+a matching order are acknowledged with HTTP 200 and an empty body, preserving the
+planned behaviour. Invalid signatures/payloads return 400; configuration or
+database processing failures return 500 so the provider may retry. These failure
+responses do not expose gateway/database error details. The command itself still
+uses UpdateReturn internally; the controller translates it to provider acknowledgements.
+
+Terminal charge states update only matching orders. Repeated delivery is a no-op;
+success may supersede failure, and a delayed failure cannot downgrade an already
+paid order. Updates are conditional SQL statements, so this guard is atomic.
+As before, an event arriving before its order exists is acknowledged; reconciling
+that payment/order timing is not added by this slice.
+
+**Wire contract:** POST `/api/payments` now returns
+`DtoReturnOne<BasketDto>` at HTTP 200 for handled outcomes. Its input and protected
+route are unchanged. POST `/api/payments/webhook` stays anonymous with verified
+provider input and the empty acknowledgements described above. React is unchanged
+and its payment response adaptation remains in Phase 8a. No schema migration is needed.
+
+**Verification:** all **119 tests passed**, including 20 new Payments cases:
+amount/delivery calculation, create/repeated-update persistence, empty/missing
+baskets, authenticated ownership, gateway/read/save failures, competing intent
+guards, locally signed terminal/pending/unrelated events, unmatched orders,
+duplicate/out-of-order delivery, invalid signatures and database failure handling.
+Adapter request tests use a mocked Stripe SDK client to verify create/update
+payloads and idempotency keys without sending a network request. The complete
+suite and API build succeeded with zero errors.
+
+**HTTP smoke:** using an unreachable local database and temporary JWT/webhook keys,
+anonymous POST payments returned 401, authenticated POST returned a failed HTTP 200
+envelope, signed unrelated/pending webhooks returned empty HTTP 200, a signed
+terminal event returned 500 on the database error, and an invalid signature returned
+400. Windows EventLog was disabled only for the temporary smoke process. Real
+Stripe sandbox/production calls and PostgreSQL writes were not exercised.
 
 ## 9. Deferred infrastructure — the switch-on runbook
 
