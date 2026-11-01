@@ -1,6 +1,6 @@
 import { Edit, Delete } from "@mui/icons-material";
 import { LoadingButton } from "@mui/lab";
-import { Box, Typography, Button, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody } from "@mui/material";
+import { Alert, Box, Typography, Button, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody } from "@mui/material";
 import AppPagination from "../../app/components/AppPagination";
 import { currencyFormat } from "../../app/util/util";
 import useProducts from "../../app/hooks/useProducts";
@@ -12,16 +12,21 @@ import { Product } from "../../app/models/product";
 import agent from "../../app/api/agent";
 
 export default function Inventory() {
-    const {products, metaData} = useProducts();
+    const {products, metaData, error, retry} = useProducts();
     const dispatch = useAppDispatch();
     const [editMode, setEditMode] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | undefined>(undefined);
     const [loading, setLoading] = useState(false);
     const [target, setTarget] = useState(0);
+    const [editingId, setEditingId] = useState<number | null>(null);
 
-    function handleSelectProduct(product: Product) {
-        setSelectedProduct(product);
-        setEditMode(true);
+    async function handleSelectProduct(product: Product) {
+        setEditingId(product.id);
+        try {
+            setSelectedProduct(await agent.Catalog.details(product.id));
+            setEditMode(true);
+        } catch (error) { console.log(error); }
+        finally { setEditingId(null); }
     }
 
     function handleDeleteProduct(id: number) {
@@ -39,6 +44,7 @@ export default function Inventory() {
     }
 
     if (editMode) return <ProductForm product={selectedProduct} cancelEdit={cancleEdit} />
+    if (error) return <Alert severity="error" action={<Button onClick={retry}>Retry</Button>}>{error}</Alert>;
 
     return (
         <>
@@ -79,7 +85,7 @@ export default function Inventory() {
                                 <TableCell align="center">{product.brand}</TableCell>
                                 <TableCell align="center">{product.quantityInStock}</TableCell>
                                 <TableCell align="right">
-                                     <Button onClick={() => handleSelectProduct(product)} startIcon={<Edit />} />
+                                     <LoadingButton loading={editingId === product.id} disabled={editingId !== null} onClick={() => handleSelectProduct(product)} startIcon={<Edit />} />
                                      <LoadingButton 
                                          loading={loading && target === product.id} 
                                          onClick={() => handleDeleteProduct(product.id)} 

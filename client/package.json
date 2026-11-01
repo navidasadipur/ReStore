@@ -44,6 +44,11 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
+  "jest": {
+    "moduleNameMapper": {
+      "^axios$": "<rootDir>/node_modules/axios/dist/node/axios.cjs"
+    }
+  },
   "eslintConfig": {
     "extends": [
       "react-app",

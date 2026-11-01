@@ -1,4 +1,4 @@
-import { Box, Button, Paper, Step, StepLabel, Stepper, Typography } from "@mui/material";
+import { Alert, Box, Button, Paper, Step, StepLabel, Stepper, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 import { FieldValues, FormProvider, useForm } from "react-hook-form";
 import AddressForm from "./AddressForm";
@@ -11,7 +11,7 @@ import { useAppDispatch, useAppSelector } from "../../app/store/configureStore";
 import { clearBasket } from "../basket/basketSlice";
 import { LoadingButton } from "@mui/lab";
 import { StripeElementType } from "@stripe/stripe-js";
-import { boolean } from "yup";
+import { getErrorMessages, getFormErrors } from "../../app/api/contracts";
 import { useStripe, useElements, CardNumberElement } from "@stripe/react-stripe-js";
 
 const steps = ['Shipping address', 'Review your order', 'Payment details'];
@@ -23,10 +23,11 @@ export default function CheckoutPage() {
     const dispatch = useAppDispatch();
 
     const [cardState, setCardState] = useState<{ elementError: { [key in StripeElementType]?: string } }>({ elementError: {} });
-    const [cardComplete, setCardComplete] = useState<any>({ cardNumber: false, CardExpiry: false, cardCvc: false });
+    const [cardComplete, setCardComplete] = useState<any>({ cardNumber: false, cardExpiry: false, cardCvc: false });
 
     const [paymentMessage, setPaymentMessage] = useState('');
     const [paymentSucceeded, setPaymentSucceeded] = useState(false);
+    const [confirmedPaymentId, setConfirmedPaymentId] = useState<string | null>(null);
 
     const {basket} = useAppSelector(state => state.basket);
 
@@ -34,14 +35,14 @@ export default function CheckoutPage() {
     const elements = useElements();
   
     function onCardInputChange(event: any) {
-      setCardState({
-        ...cardState,
+      setCardState(previous => ({
+        ...previous,
         elementError: {
-          ...cardState.elementError,
+          ...previous.elementError,
           [event.elementType]: event.error?.message
         }
-      })
-      setCardComplete({ ...cardComplete, [event.elementType]: event.complete });
+      }));
+      setCardComplete((previous: any) => ({ ...previous, [event.elementType]: event.complete }));
     }
 
     function getStepContent(step: number) {
@@ -71,41 +72,48 @@ export default function CheckoutPage() {
                     methods.reset({ ...methods.getValues(), ...response, saveAddress: false })
                 }
             })
+            .catch(error => console.log(error));
     }, [methods]);
 
     async function submitOrder(data: FieldValues) {
-        setLoading(true);
-        const { nameOnCard, saveAddress, ...shippingAddress } = data;
-        if (!stripe || !elements) return; // stripe is not ready
-        try {
-            const cardElement = elements.getElement(CardNumberElement);
-            const paymentResult = await stripe.confirmCardPayment(basket?.clientSecret!, {
-                payment_method: {
-                    card: cardElement!,
-                    billing_details: {
-                        name: nameOnCard
-                    }
-                }
-            });
-            console.log(paymentResult);
-            if (paymentResult.paymentIntent?.status === 'succeeded'){
-                const orderNumber = await agent.Orders.create({ saveAddress, shippingAddress });
-                setOrderNumber(orderNumber);
-                setPaymentSucceeded(true);
-                setPaymentMessage('Thank you - we have received your payment');
-                setActiveStep(activeStep + 1);
-                dispatch(clearBasket());
-                setLoading(false);
-            } else {
-                setPaymentMessage(paymentResult.error?.message!);
-                setPaymentSucceeded(false);
-                setLoading(false);
-                setActiveStep(activeStep + 1);
-            }
-        } catch (error) {
-            console.log(error);
-            setLoading(false);
+        if (!confirmedPaymentId && (!stripe || !elements || !basket?.clientSecret)) {
+            setPaymentMessage('Payment is not ready. Please try again.');
+            return;
         }
+        setLoading(true);
+        setPaymentMessage('');
+        const { nameOnCard, saveAddress, ...shippingAddress } = data;
+        try {
+            if (!confirmedPaymentId) {
+                const cardElement = elements!.getElement(CardNumberElement);
+                const paymentResult = await stripe!.confirmCardPayment(basket!.clientSecret!, {
+                    payment_method: {
+                        card: cardElement!,
+                        billing_details: { name: nameOnCard }
+                    }
+                });
+                if (paymentResult.paymentIntent?.status !== 'succeeded') {
+                    setPaymentMessage(paymentResult.error?.message ?? 'The payment could not be confirmed.');
+                    setPaymentSucceeded(false);
+                    setActiveStep(steps.length);
+                    return;
+                }
+                // If order creation fails after payment, a retry must not confirm/pay again.
+                setConfirmedPaymentId(paymentResult.paymentIntent.id);
+            }
+            const orderNumber = await agent.Orders.create({ saveAddress, shippingAddress });
+            setOrderNumber(orderNumber);
+            setPaymentSucceeded(true);
+            setPaymentMessage('Thank you - we have received your payment');
+            setActiveStep(activeStep + 1);
+            dispatch(clearBasket());
+        } catch (error) {
+            setPaymentMessage(getErrorMessages(error).join('\n'));
+            const failure = getFormErrors(error, ['fullName', 'address1', 'address2', 'city', 'state', 'zip', 'country']);
+            Object.entries(failure.fieldErrors).forEach(([field, message]) => methods.setError(field, { type: 'server', message }));
+            if (Object.keys(failure.fieldErrors).length) setActiveStep(0);
+        }
+        finally { setLoading(false); }
     }
 
     const handleNext = async (data: FieldValues) => {
@@ -165,6 +173,7 @@ export default function CheckoutPage() {
                         </>
                     ) : (
                         <form onSubmit={methods.handleSubmit(handleNext)}>
+                            {paymentMessage && <Alert severity="error" sx={{ mb: 2 }}>{paymentMessage}</Alert>}
                             {getStepContent(activeStep)}
                             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                                 {activeStep !== 0 && (

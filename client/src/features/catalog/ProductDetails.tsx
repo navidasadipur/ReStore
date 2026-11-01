@@ -33,8 +33,12 @@ export default function ProductDetails() {
 
   useEffect(() => {
     if(item) setQuantity(item.quantity);
-    if(!product) dispatch(fetchProductAsync(parseInt(id!)));
-  }, [id, item]);
+  }, [item]);
+
+  const needsDetails = !product || product.description === undefined;
+  useEffect(() => {
+    if (needsDetails) dispatch(fetchProductAsync(parseInt(id!)));
+  }, [id, needsDetails, dispatch]);
 
   function handleInputChange(event: any){
     if (event.target.value >= 0){

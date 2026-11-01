@@ -5,7 +5,9 @@ import Box from '@mui/material/Box';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
-import { Paper } from '@mui/material';
+import { Alert, Paper } from '@mui/material';
+import { useState } from 'react';
+import { getFormErrors } from '../../app/api/contracts';
 import { Link } from 'react-router-dom';
 import { FieldValues, useForm } from 'react-hook-form';
 import { LoadingButton } from '@mui/lab';
@@ -17,18 +19,21 @@ import { signInUser } from './accountSlice';
 export default function Login() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const [serverError, setServerError] = useState('');
 
-  const {register, handleSubmit, formState: {isSubmitting, errors, isValid}} = useForm({
+  const {register, handleSubmit, setError, formState: {isSubmitting, errors, isValid}} = useForm({
     mode: 'all'
   });
 
   async function submitForm(data: FieldValues){
+    setServerError('');
     try {
-      await dispatch(signInUser(data))
-      .then(() => navigate('/catalog'))
-      .catch(() => navigate('/server-error'));
-    } catch (error ) {
-      console.log(error);
+      await dispatch(signInUser(data)).unwrap();
+      navigate('/catalog');
+    } catch (error) {
+      const failure = getFormErrors(error, ['username', 'password']);
+      Object.entries(failure.fieldErrors).forEach(([field, message]) => setError(field, { type: 'server', message }));
+      setServerError(failure.message);
     }
 
 
@@ -44,6 +49,7 @@ export default function Login() {
             Sign in
           </Typography>
           <Box component="form" onSubmit={handleSubmit(submitForm)} noValidate sx={{ mt: 1 }}>
+            {serverError && <Alert severity="error">{serverError}</Alert>}
             <TextField
               margin="normal"
               fullWidth
@@ -51,7 +57,7 @@ export default function Login() {
               autoFocus
               {...register('username', {required: 'Username is required'})}
               error={!!errors.username}
-              helperText={errors?.password?.message?.toString()}
+              helperText={errors?.username?.message?.toString()}
             />
             <TextField
               margin="normal"

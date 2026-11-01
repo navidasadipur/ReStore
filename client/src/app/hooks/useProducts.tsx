@@ -11,6 +11,7 @@ export default function useProducts() {
       brands,
       types,
       metaData,
+      error,
     } = useAppSelector((state) => state.catalog);
     const dispatch = useAppDispatch();
   
@@ -28,6 +29,8 @@ export default function useProducts() {
         filtersLoaded,
         brands,
         types,
-        metaData
+        metaData,
+        error,
+        retry: () => { dispatch(fetchFilters()); dispatch(fetchProductsAsync()); }
     }
 }

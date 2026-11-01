@@ -1,8 +1,9 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Phases 0–8 implemented** — project split, shared kernel, filters,
-entity/key renames, feature slices and API shell. React contract migration (Phase 8a) is next. Remaining React work
-is deferred to the dedicated client phase after the backend contracts settle.
+Status: **Backend Phases 0–8 and React Phase 8a implemented** — project split,
+shared kernel, filters, entity/key renames, feature slices, API shell and client
+contract migration. Phase 9 documentation is next; live PostgreSQL/Stripe and
+deployment verification remain before release.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
 
@@ -707,7 +708,7 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 6 | Account — implemented | `ITokenGenerator` + `IIdentityService`; transactional guest-basket transfer on login, preserving the legacy replacement rule. See §8.6. |
 | 7 | Payments — implemented | `IPaymentGateway`, CQRS payment commands, guarded payment-column updates and verified webhook processing; unknown/pending events keep HTTP 200 `EmptyResult()`. See §8.7. |
 | 8 | API shell — implemented | Thin Program, explicit application/API registration, feature binding/exception envelopes, and preserved Buggy/authentication/webhook protocols. See §8.8. |
-| 8a | **React client contract migration** | After backend Phases 5–8, adapt `agent.ts`, Redux and forms to the final API contracts; reconcile `searchTerm`/`FullSearchPhrase`, filters/sorting, paging metadata and empty-basket handling. Fix pagination to use the effective requested page size rather than `returnCount`. Verify with `npm ci`, `npm run build` and catalog/search/filter/paging, basket, account, checkout and payment flows. No further client changes before this phase. |
+| 8a | **React client contract migration — implemented** | Typed envelope/error adapters, account and form failures, search/filter/sort inputs, correct paging, authoritative basket state, paged orders and checkout responses. npm ci, TypeScript, 23 client tests and production build passed; live external-service verification remains. See §8.9. |
 | 9 | Docs | `README.md` API section, `docs/architecture.md` |
 | 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
 
@@ -1168,6 +1169,76 @@ Phase 8a remains pending: React must adapt account/order/payment envelopes,
 validation dictionaries, search/filter/sort inputs, paging and empty-basket handling.
 Its intentional-error demo must continue handling the classic Buggy HTTP errors.
 
+### 8.9 Phase 8a — executed: the React contract migration
+
+API shell work was committed as `f984c70`
+(`Unify feature API failures while preserving intentional HTTP error demonstrations`).
+This phase changes client integration and the plan, not backend code or schema.
+
+**Shared contract handling:** `contracts.ts` defines typed envelopes and a
+normalized ApiError with serializable details. Every business operation checks
+`succeeded`; failed HTTP 200 responses reject instead of being consumed as success.
+The agent unwraps sessions, nullable addresses/baskets, product details, paginated
+lists and inserted order/user keys. Binding dictionaries and Identity validator
+codes are surfaced in forms, with a visible summary for failures that have no
+specific field. HTTP errors still use the existing interceptor path; network
+errors no longer crash by dereferencing a missing response.
+
+The intentional Buggy demonstrations remain: validation messages are shown as a
+list, 400/401/403 retain feedback and 500 navigates to the server-error page. No
+educational endpoint or deliberate exception was removed or rewritten.
+
+**Catalog and administration:** the search box now sends `fullSearchPhrase`,
+alongside the existing CSV brand/type filters and supported orderBy keys. Product
+page size is normalized to the backend's bounds, and total pages are calculated
+from the requested size, never returnCount. Pagination follows the current server
+metadata after filter resets and displays 0–0 for empty results. Failed catalog
+loads show an error/retry instead of an indefinite spinner.
+
+Product list records are correctly treated as summaries without a description.
+Product details and inventory editing fetch the full detail DTO when needed;
+create/update still read the saved record back for the Redux catalog. Multipart
+forms omit null/undefined files and let Axios/browser generate upload boundaries.
+The client price/stock bounds match ProductControls (price >= 100, stock 0–200).
+This does not expand server-side validation or introduce a new filter-grid UI.
+
+**Account and basket:** login uses thunk unwrap so it navigates only on success;
+reducers no longer throw rejected payloads. A null session basket clears stale
+client basket state. Saved-address null is a normal empty state. JWT role reading
+accepts the short `role` claim and the previous URI claim, including arrays and
+base64url encoding. Invalid stored JSON cannot block startup. Session rejection and
+logout clear stale account/basket state. Guest basket reads can resolve successfully
+with null, and remove operations apply the returned server basket rather than
+subtracting quantities locally into a negative or stale line.
+
+**Orders and checkout:** the order list sends nested PagingInfo parameters and
+renders the returned page metadata; detail is fetched from its endpoint. Checkout
+unwraps the payment-intent basket and inserted order key. A failed intent prevents
+entry to the payment form and offers retry. An order failure after confirmed payment
+retains the basket and displays the failure; retry in the mounted checkout repeats
+order submission without confirming the payment again. That guard is in-memory,
+not a durable cross-refresh payment reconciliation system.
+
+**Verification:** the existing lockfile installed successfully with npm ci;
+no dependency versions were upgraded. TypeScript checking passed. All **23 client
+tests in six suites passed**, covering envelope success/failure, form errors,
+search/filter/sort parameters, partial-page counts, account sessions/JWT roles,
+empty/removed baskets, order paging, payment responses, multipart uploads, Buggy
+validation/500 handling, network failures, login UI rejection, product-detail
+loading for editing and checkout retry after a mocked confirmed payment.
+
+The production build succeeded with existing lint warnings and an outdated
+Browserslist database warning. Build output was explicitly redirected to ignored
+`client/build` so tracked API wwwroot assets were not replaced. Jest maps Axios to
+its distributed CommonJS build for the existing test runner; production imports
+are unchanged. The production build required normal worker-process permission
+outside the sandbox after an initial spawn EPERM.
+
+No real Stripe payment, live PostgreSQL-backed browser checkout or deployment was
+performed. Gateway/HTTP responses in client tests are controlled fixtures; the
+backend's 136-test verification is recorded in Phase 8 and backend code is unchanged
+in this phase. Phase 9 documentation and real-environment acceptance remain next.
+
 ## 9. Deferred infrastructure — the switch-on runbook
 
 Redis and RabbitMQ are **packaged, adapted and inert** after Phase 1 (D9). This
@@ -1230,7 +1301,7 @@ speculative.
 
 ## 10. What I will not touch
 
-- `client/` — no frontend changes in this pass.
+- Frontend layout redesign and dependency upgrades — Phase 8a changes API integration only.
 - `tools/ReStore.Deploy*`, `deploy/compose.yml` (image-based, path-free) —
   only the `*.md` prose paths in §4.2.
 - Any git action (no commit/push/branch) unless explicitly asked.
