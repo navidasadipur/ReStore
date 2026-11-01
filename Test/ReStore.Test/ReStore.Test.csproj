@@ -17,11 +17,13 @@
     <PackageReference Include="FluentAssertions" Version="8.9.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.21" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.11" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\SourceApi\ReStore.Application\ReStore.Application.csproj" />
     <ProjectReference Include="..\..\SourceApi\ReStore.Infrastructure\ReStore.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\SourceApi\ReStore.Api\ReStore.Api.csproj" />
   </ItemGroup>
 
 </Project>

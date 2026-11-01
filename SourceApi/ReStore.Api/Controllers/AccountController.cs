@@ -1,4 +1,5 @@
 using MediatR;
+using ReStore.Api.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReStore.Application.Commands;
@@ -8,6 +9,7 @@ using ReStore.Application.Queries;
 
 namespace ReStore.Api.Controllers;
 
+[EnvelopeResponse]
 public class AccountController(IMediator mediator) : BaseApiController
 {
     [HttpPost("login")]

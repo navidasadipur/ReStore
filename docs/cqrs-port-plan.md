@@ -1,7 +1,7 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Phases 0–7 implemented** — project split, shared kernel, filters,
-entity/key renames, Products, Basket, Orders, Account and Payments. API shell is next. Remaining React work
+Status: **Phases 0–8 implemented** — project split, shared kernel, filters,
+entity/key renames, feature slices and API shell. React contract migration (Phase 8a) is next. Remaining React work
 is deferred to the dedicated client phase after the backend contracts settle.
 Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
@@ -9,8 +9,9 @@ Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 Goal: ReStore's backend adopts the same shape as AccountsApi —
 `Domain / Application / Infrastructure / Api`, MediatR CQRS through base
 handlers, a generic repository pair over a `RequestConfig`, per-entity
-`Controls`, Mapster instead of AutoMapper — and the same wire style
-(envelopes, always HTTP 200).
+`Controls`, Mapster instead of AutoMapper — and business envelopes at HTTP 200.
+Educational error endpoints and HTTP/provider protocols retain their explicit
+status contracts; see §8.8.
 
 ## Decisions (locked by the developer)
 
@@ -27,6 +28,7 @@ handlers, a generic repository pair over a `RequestConfig`, per-entity
 | D10 | **The filter engine is in the kernel.** `FilterInfo` + all 14 `eFilterType` values, translated to an expression by `FilterExpressionBuilder` (reverses deviation 2). | Clients can drive column filters and OR/AND groups, not just the free-text phrase. |
 | D11 | **An unknown sort or filter column fails the request**, naming the column (reverses deviation 3). | A client typo is reported instead of silently changing the result set. |
 | D12 | **A dedicated phase renames the entities and primary keys** of every table, before the feature slices. | `[CheckKeyExists]` lands there too (deviation 1 moves there). Slices are then written against the final names. See §8. |
+| D13 | **Preserve the intentionally added frontend error demonstrations.** | `BuggyController` and its deliberate status/exception responses remain unchanged; the feature-envelope policy must not rewrite them. |
 
 ---
 
@@ -704,7 +706,7 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 | 5 | Orders — implemented | Dedicated checkout repository owns one serializable transaction and one `SaveChanges`; stock rules live in `OrderControls`. See §8.5. |
 | 6 | Account — implemented | `ITokenGenerator` + `IIdentityService`; transactional guest-basket transfer on login, preserving the legacy replacement rule. See §8.6. |
 | 7 | Payments — implemented | `IPaymentGateway`, CQRS payment commands, guarded payment-column updates and verified webhook processing; unknown/pending events keep HTTP 200 `EmptyResult()`. See §8.7. |
-| 8 | API shell | `Program.cs` slims; finish envelope consistency (D1). `AddMediatR` is already wired. |
+| 8 | API shell — implemented | Thin Program, explicit application/API registration, feature binding/exception envelopes, and preserved Buggy/authentication/webhook protocols. See §8.8. |
 | 8a | **React client contract migration** | After backend Phases 5–8, adapt `agent.ts`, Redux and forms to the final API contracts; reconcile `searchTerm`/`FullSearchPhrase`, filters/sorting, paging metadata and empty-basket handling. Fix pagination to use the effective requested page size rather than `returnCount`. Verify with `npm ci`, `npm run build` and catalog/search/filter/paging, basket, account, checkout and payment flows. No further client changes before this phase. |
 | 9 | Docs | `README.md` API section, `docs/architecture.md` |
 | 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
@@ -1102,6 +1104,69 @@ envelope, signed unrelated/pending webhooks returned empty HTTP 200, a signed
 terminal event returned 500 on the database error, and an invalid signature returned
 400. Windows EventLog was disabled only for the temporary smoke process. Real
 Stripe sandbox/production calls and PostgreSQL writes were not exercised.
+
+### 8.8 Phase 8 — executed: the API shell
+
+Payments was already committed as `7518baf`
+(`Move payments to CQRS with isolated Stripe integration and verified webhooks`).
+The working tree was clean when Phase 8 started, so no duplicate/empty commit was
+created. The developer explicitly asked to retain the intentional frontend error
+demonstrations (D13).
+
+**Composition root:** `Program.cs` now calls `AddApplication`, `AddInfrastructure`,
+`AddApiServices`, `InitializeDatabaseAsync` and `UseApi`. MediatR assembly scanning
+belongs to Application's registration; HTTP concerns (MVC, Swagger, MCP, JWT, CORS,
+buyer identity and health endpoints) live in API extensions. Database migration
+and seeding retain their existing startup/degraded-mode behaviour.
+
+**Error policy is opt-in.** `EnvelopeResponseAttribute` marks Products, Basket,
+Orders and Account controllers, plus the payment-intent action. It is deliberately
+absent from BaseApiController, BuggyController, the Stripe webhook, MCP and SPA/
+health endpoints. There is no URL-prefix heuristic or global rewriting of status
+codes.
+
+On marked endpoints, MVC model-binding/validation failures now return HTTP 200
+with the common `ApiErrorResponse` envelope: `succeeded:false`,
+`errorCode:"ValidationFailed"`, a summary error and a field-to-messages `errors`
+dictionary. Invalid query numbers and malformed JSON are covered. Unhandled
+exceptions on marked endpoints return HTTP 200 with `errorCode:"UnhandledError"`;
+production receives a generic message rather than exception details. Handler-level
+business outcomes keep their existing typed envelopes. Clients should use
+`succeeded` for both kinds of failures.
+
+**Intentional HTTP errors are preserved.** BuggyController's source and all five
+demonstration endpoints remain unchanged, including the thrown server exception
+and manual ValidationProblem response. Authentication challenges/role denials
+remain 401/403. Stripe webhook acknowledgements/rejections/retry failures remain
+200/400/500. Native routing, method and media-type protocol statuses are not
+converted to business outcomes. The middleware retains its existing ProblemDetails
+500 path for unmarked endpoints and still avoids rewriting a started response.
+
+Swagger, static hosting, MCP, the credentialed localhost React CORS policy and
+`/health/app` / `/health/db` remain available. An HTTP test exposed the SPA fallback's
+dependence on the process working directory; it now resolves index.html using the
+host's WebRootPath, so a correctly configured content root works independently of
+the launch directory. No business validation, schema, or React source changed.
+
+**Verification:** all **136 tests passed** (119 existing and 17 new HTTP-shell
+cases). The API build succeeded with zero errors. The new tests use ASP.NET
+TestServer with real API registration, middleware, MVC binding, authentication,
+authorization, CORS and routing; a controlled mediator isolates transport failures
+from the already-tested feature handlers. They cover invalid query/JSON envelopes,
+production exception sanitization, all five Buggy responses, 401/403, webhook
+protocol responses, Swagger/health/SPA availability and CORS. TestHost is a test-only
+dependency; the test project now references the API.
+
+An additional standalone-process smoke run with the real DI graph and an
+intentionally unreachable database verified `/`, Swagger and `/health/app` at 200,
+`/health/db` at 503, all Buggy status codes unchanged, and an invalid product query
+at HTTP 200 with a validation envelope. The process was launched outside the API
+directory with an explicit content root to check the SPA fallback fix. EventLog
+was disabled only in this temporary smoke process, as in earlier phases.
+
+Phase 8a remains pending: React must adapt account/order/payment envelopes,
+validation dictionaries, search/filter/sort inputs, paging and empty-basket handling.
+Its intentional-error demo must continue handling the classic Buggy HTTP errors.
 
 ## 9. Deferred infrastructure — the switch-on runbook
 

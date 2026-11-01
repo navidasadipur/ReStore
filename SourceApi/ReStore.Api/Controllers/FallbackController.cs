@@ -4,11 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace ReStore.Api.Controllers
 {
     [AllowAnonymous]
-    public class FallbackController : Controller
+    public class FallbackController(IWebHostEnvironment environment) : Controller
     {
         public IActionResult Index()
         {
-            return PhysicalFile(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "index.html"), "text/HTML");
+            return PhysicalFile(Path.Combine(environment.WebRootPath, "index.html"), "text/html");
         }
     }
 }

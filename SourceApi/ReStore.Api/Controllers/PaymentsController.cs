@@ -1,4 +1,5 @@
 using MediatR;
+using ReStore.Api.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReStore.Application.Commands;
@@ -9,6 +10,7 @@ namespace ReStore.Api.Controllers;
 public class PaymentsController(IMediator mediator) : BaseApiController
 {
     [Authorize]
+    [EnvelopeResponse]
     [HttpPost]
     public async Task<DtoReturnOne<BasketDto>> CreateOrUpdatePaymentIntent(CancellationToken cancellationToken)
         => await mediator.Send(new CreateOrUpdatePaymentIntentCommand(), cancellationToken);

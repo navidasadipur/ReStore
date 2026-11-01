@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using ReStore.Api.DTOs;
+using ReStore.Api.Filters;
 
 namespace ReStore.Api.Middleware
 {
@@ -31,6 +33,17 @@ namespace ReStore.Api.Middleware
                 // If the response has already started there is nothing we can
                 // change — writing here would throw and mask the real error.
                 if (context.Response.HasStarted) throw;
+
+                // Only feature endpoints opt in. BuggyController's deliberate errors,
+                // webhooks, MCP and non-API responses retain their HTTP semantics.
+                if (context.GetEndpoint()?.Metadata.GetMetadata<EnvelopeResponseAttribute>() is not null)
+                {
+                    context.Response.Clear();
+                    context.Response.StatusCode = StatusCodes.Status200OK;
+                    await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                        _env.IsDevelopment() ? ex.Message : "Internal server error", "UnhandledError"));
+                    return;
+                }
 
                 context.Response.ContentType = "application/json";
                 context.Response.StatusCode = 500;

@@ -1,4 +1,5 @@
 using MediatR;
+using ReStore.Api.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReStore.Application.Commands;
@@ -9,6 +10,7 @@ using ReStore.Application.Queries;
 namespace ReStore.Api.Controllers;
 
 [Authorize]
+[EnvelopeResponse]
 public class OrdersController(IMediator mediator) : BaseApiController
 {
     [HttpGet]

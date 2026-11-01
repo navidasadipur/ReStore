@@ -1,4 +1,5 @@
 using MediatR;
+using ReStore.Api.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReStore.Api.DTOs;
@@ -21,6 +22,7 @@ namespace ReStore.Api.Controllers
     /// Responses are the envelope itself with HTTP 200 (decision D1): a failure is
     /// Result=Failed with a message, not a status code.
     /// </summary>
+    [EnvelopeResponse]
     public class ProductsController : BaseApiController
     {
         /// <summary>

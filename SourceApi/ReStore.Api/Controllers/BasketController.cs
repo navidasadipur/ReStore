@@ -1,4 +1,5 @@
 using MediatR;
+using ReStore.Api.Filters;
 using Microsoft.AspNetCore.Mvc;
 using ReStore.Application.Commands;
 using ReStore.Application.DTOs;
@@ -13,6 +14,7 @@ namespace ReStore.Api.Controllers
     /// cookie is written by its implementation, so nothing in this controller touches
     /// HttpContext or Identity any more.
     /// </summary>
+    [EnvelopeResponse]
     public class BasketController : BaseApiController
     {
         private readonly IMediator _mediator;
