@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using ReStore.Application.Controls;
 using ReStore.Application.Interfaces;
 using ReStore.Domain.Entities;
+using ReStore.Domain.Common;
 using ReStore.Domain.Entities.OrderAggregare;
 using ReStore.Domain.Interfaces.Common;
 using ReStore.Infrastructure.Persistence;
@@ -48,7 +49,7 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
                 ShippingAddress = shippingAddress is null ? null! : CopyAddress<ShippingAddress>(shippingAddress),
                 OrderItems = items,
                 SubTotal = subtotal,
-                DeliveryFee = subtotal > 10000 ? 0 : 500,
+                DeliveryFee = StoreMoney.GetDeliveryFee(subtotal),
                 PaymentIntentId = basket.PaymentIntentId!
             };
 

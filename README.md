@@ -63,6 +63,13 @@ The client runs at `http://localhost:3000`; its development API URL is
 `http://localhost:5000/api/`. That origin is allowed by the API's credentialed CORS
 policy. Requests carry the guest cookie and, when signed in, the Bearer token.
 
+## Payment migration in progress
+
+Step 1 switches the demo catalog to rial storage and toman display. New Stripe payments
+are disabled while ZarinPal is implemented. **API startup applies a catalog repricing
+migration**; review [the migration decisions and upgrade notes](docs/zarinpal-migration-plan.md)
+before running against an existing database. Existing demo orders are repriced to rials using the same sample pricing rule as the catalog.
+
 ## Configuration
 
 | Environment variable | Used for |

@@ -5,6 +5,14 @@ about an already-deployed image. [Architecture](architecture.md) explains their
 implementation; [README](../README.md) covers configuration and local commands.
 Swagger is served at `/swagger/v1/swagger.json`.
 
+## Monetary units during the ZarinPal migration
+
+Product price inputs/outputs and basket prices are integer IRR (rials). The UI displays
+tomans (IRR / 10). All orders, including existing demo orders after migration, use rials.
+Order totals include the saved delivery fee.
+New Stripe payment requests return a failed business envelope while ZarinPal is being
+implemented. See [the migration plan](zarinpal-migration-plan.md).
+
 ## Envelopes and HTTP statuses
 
 Business handlers return an envelope at HTTP 200 for handled success or failure.

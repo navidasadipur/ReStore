@@ -55,8 +55,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     }
 
     [Theory]
-    [InlineData(5000, 500)]
-    [InlineData(5001, 0)]
+    [InlineData(5_000_000, 500_000)]
+    [InlineData(5_000_001, 0)]
     public async Task Checkout_persists_snapshot_stock_and_basket_removal(long price, long deliveryFee)
     {
         var seed = await SeedBasket(price);
@@ -218,7 +218,7 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         list.Data.Should().ContainSingle().Which.BuyerId.Should().Be(first.Buyer);
         list.Data[0].OrderItems.Should().ContainSingle().Which.Name.Should().Be("Ordered shoe");
         list.Data[0].OrderItems[0].Price.Should().Be(300);
-        list.Data[0].Total.Should().Be(1100);
+        list.Data[0].Total.Should().Be(500600);
 
         var own = await Detail(first.Buyer).Handle(new OrderDetailQuery { Id = created.Key }, CancellationToken.None);
         own.Succeeded.Should().BeTrue(own.Error);

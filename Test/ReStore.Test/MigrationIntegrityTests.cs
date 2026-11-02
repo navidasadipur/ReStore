@@ -32,7 +32,8 @@ public class MigrationIntegrityTests
         "20230515130717_PostGresInitial",
         "20230531143443_makePictureUrlNullable",
         "20230603090725_PublicIdAdded",
-        "20261025091004_RenameEntityKeys"
+        "20261025091004_RenameEntityKeys",
+        "20261102090000_UseIranianRialCatalog"
     ];
 
     private static Type[] MigrationTypes => typeof(StoreContext).Assembly.GetTypes()
@@ -84,6 +85,21 @@ public class MigrationIntegrityTests
             .ToArray();
 
         tables.Should().Contain(["Products", "Baskets", "Orders", "AspNetUsers", "AspNetRoles"]);
+    }
+
+    [Fact]
+    public void Rial_upgrade_generates_a_Postgres_script_without_model_drift()
+    {
+        var options = new DbContextOptionsBuilder<StoreContext>()
+            .UseNpgsql("Host=localhost;Database=unused;Username=unused;Password=unused").Options;
+        using var context = new StoreContext(options);
+        context.Database.HasPendingModelChanges().Should().BeFalse();
+        var script = context.GetService<IMigrator>().GenerateScript(
+            "20261025091004_RenameEntityKeys", "20261102090000_UseIranianRialCatalog");
+        script.Should().Contain("UPDATE \"Products\"");
+        script.Should().Contain("UPDATE \"OrderItem\"");
+        script.Should().Contain("SET \"SubTotal\"");
+        script.Should().NotContain("ADD \"Currency\"");
     }
 
     [Fact]

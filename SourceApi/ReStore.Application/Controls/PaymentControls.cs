@@ -1,4 +1,5 @@
 using ReStore.Domain.Entities;
+using ReStore.Domain.Common;
 using ReStore.Domain.Interfaces.Common;
 using ReStore.Domain.Interfaces.Repository;
 
@@ -21,6 +22,6 @@ public class PaymentControls(IGenericQueryRepositoryBase<BasketEntity> repositor
     public long GetAmount(BasketEntity basket)
     {
         var subtotal = basket.Items.Sum(item => checked(item.Product.Price * item.Quantity));
-        return checked(subtotal + (subtotal > 10000 ? 0 : 500));
+        return checked(subtotal + (StoreMoney.GetDeliveryFee(subtotal)));
     }
 }

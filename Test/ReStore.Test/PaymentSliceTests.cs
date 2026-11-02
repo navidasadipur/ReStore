@@ -58,8 +58,8 @@ public sealed class PaymentSliceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(5000, 10500)]
-    [InlineData(5001, 10002)]
+    [InlineData(5_000_000, 10_500_000)]
+    [InlineData(5_000_001, 10_000_002)]
     public async Task Payment_amount_uses_database_prices_and_delivery_and_persists_only_payment_fields(long price, long amount)
     {
         var basketId = await SeedBasket(price);
@@ -91,7 +91,7 @@ public sealed class PaymentSliceTests : IDisposable
         first.Succeeded.Should().BeTrue(first.Error);
         second.Succeeded.Should().BeTrue(second.Error);
         third.Succeeded.Should().BeTrue(third.Error);
-        gateway.Verify(g => g.CreateOrUpdateAsync(1100, "pi-test", It.IsAny<string>(), CancellationToken.None), Times.Exactly(2));
+        gateway.Verify(g => g.CreateOrUpdateAsync(500600, "pi-test", It.IsAny<string>(), CancellationToken.None), Times.Exactly(2));
         var keys = gateway.Invocations.Select(call => (string)call.Arguments[2]).ToArray();
         keys[1].Should().Be(keys[2], "retrying the same update reuses its idempotency key");
         (await _store.Context.Products.CountAsync()).Should().Be(1);
@@ -283,27 +283,14 @@ public sealed class PaymentSliceTests : IDisposable
     [Theory]
     [InlineData(null)]
     [InlineData("pi-existing")]
-    public async Task Stripe_adapter_sends_the_amount_and_idempotency_key_without_a_live_request(string? existingIntent)
+    public async Task Rial_payments_never_create_or_update_a_USD_Stripe_intent(string? existingIntent)
     {
-        var client = new Mock<IStripeClient>();
-        client.Setup(c => c.RequestAsync<PaymentIntent>(HttpMethod.Post, It.IsAny<string>(), It.IsAny<BaseOptions>(),
-                It.IsAny<RequestOptions>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PaymentIntent { Id = existingIntent ?? "pi-created", ClientSecret = "secret" });
+        var client = new Mock<IStripeClient>(MockBehavior.Strict);
         var gateway = new StripePaymentGateway(Mock.Of<IConfiguration>(), client.Object);
-        var result = await gateway.CreateOrUpdateAsync(1100, existingIntent, "basket-idempotency-key", CancellationToken.None);
-        result.Result.Should().BeTrue(result.Error);
-        var call = client.Invocations.Single(invocation => invocation.Method.Name == nameof(IStripeClient.RequestAsync));
-        call.Arguments[1].Should().Be(existingIntent is null ? "/v1/payment_intents" : "/v1/payment_intents/pi-existing");
-        ((RequestOptions)call.Arguments[3]).IdempotencyKey.Should().Be("basket-idempotency-key");
-        if (existingIntent is null)
-        {
-            var options = (PaymentIntentCreateOptions)call.Arguments[2];
-            options.Amount.Should().Be(1100);
-            options.Currency.Should().Be("usd");
-            options.PaymentMethodTypes.Should().ContainSingle().Which.Should().Be("card");
-        }
-        else
-            ((PaymentIntentUpdateOptions)call.Arguments[2]).Amount.Should().Be(1100);
+        var result = await gateway.CreateOrUpdateAsync(1_000_000, existingIntent, "key", CancellationToken.None);
+        result.Result.Should().BeFalse();
+        result.Error.Should().Contain("ZarinPal");
+        client.VerifyNoOtherCalls();
     }
 
     public void Dispose() => _store.Dispose();
