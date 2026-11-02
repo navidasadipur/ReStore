@@ -1,10 +1,10 @@
 # Porting AccountsApi's CQRS / clean-architecture layering into ReStore
 
-Status: **Backend Phases 0–8 and React Phase 8a implemented** — project split,
-shared kernel, filters, entity/key renames, feature slices, API shell and client
-contract migration. Phase 9 documentation is next; live PostgreSQL/Stripe and
-deployment verification remain before release.
-Sources read: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
+Status: **Phases 0–9 implemented, including React Phase 8a** — backend layering,
+feature slices, API shell, client contract migration and current architecture/API
+documentation. Phase 10 remains conditional on Redis/RabbitMQ server readiness;
+live PostgreSQL/Stripe and deployment verification remain before release.
+Initial source snapshots: `D:\Projects\AccountsApi` (branch `develop`, HEAD `389ad5e`) and
 `D:\Learn\ReStore` (branch `develop`, HEAD `543df08`).
 
 Goal: ReStore's backend adopts the same shape as AccountsApi —
@@ -18,10 +18,10 @@ status contracts; see §8.8.
 
 | # | Decision | Consequence |
 | --- | --- | --- |
-| D1 | **Envelope-only responses, always 200.** Actions return `InsertReturn` / `PaginatedResponseListDto<Dto>` / `DtoReturnOne<Dto>`; errors travel in the body via `Result`/`Error`. | The React client (`client/src/app/api/agent.ts`) will need a later frontend phase. Nothing breaks during the kernel phase, because no controller is migrated yet. |
+| D1 | **Business envelopes at HTTP 200.** Actions return `InsertReturn` / `PaginatedResponseListDto<Dto>` / `DtoReturnOne<Dto>`; failures travel in the body. | Implemented through Phases 3–8a. Clients use `succeeded`; framework/provider protocols and the intentional Buggy errors retain their statuses (§8.8, D13). |
 | D4 | **Mirror AccountsApi's layout**: `SourceApi/ReStore.Api`, `SourceApi/ReStore.Domain`, `SourceApi/ReStore.Application`, `SourceApi/ReStore.Infrastructure`, `Test/ReStore.Test`. | `Dockerfile`, `build.yml`, `.dockerignore`, `client/.env.production`, `.vscode/*.json`, solution and deploy docs all need path edits. See §7. |
-| D8 | **First pass stops at the shared kernel.** Three libraries + test project + base handlers + generic repositories + Controls + Mapster wiring. No controller is converted to CQRS yet. | The kernel is only proven by tests in this phase; Phase 2 (Products) must follow promptly or it rots. |
-| D2 | **Mapster replaces AutoMapper.** During the kernel phase `TypeAdapterConfig` is registered *alongside* AutoMapper; AutoMapper is removed in the last phase. | `API/RequestHelpers/MappingProfiles.cs` and the `IMapper` usages get rewritten at slice time. |
+| D8 | **First pass stops at the shared kernel.** Three libraries + test project + base handlers + generic repositories + Controls + Mapster wiring; no controller conversion in that first pass. | The kernel pass is complete and later feature slices exercise it. Products became Phase 3 after insertion of the rename phase. |
+| D2 | **Mapster replaces AutoMapper.** The two coexisted temporarily in the kernel phase. | Completed in Products (Phase 3), AutoMapper's last consumer. The old profiles/package are removed. |
 | D5 | **No message-language rule.** The instruction is deleted: each message is written in whatever language fits the feature. Kernel messages are English; feature phases decide case by case. | Deviation 1 is withdrawn — no enforced convention either way. |
 | D6 | **Base handlers use constructor injection** instead of the `IIocContainers` service locator. | Behaviour-neutral — see §5.10 for the one lifetime caveat. Pipeline and `virtual` hooks unchanged. |
 | D7 | **`ChangeFields` partial-update plumbing is kept.** | `BaseUpdateCommand.ChangeFields` and the `Controls.CheckOnUpdate` filter stay, even though ReStore's forms currently send every column. |
@@ -697,19 +697,19 @@ converts `IFormFile`. Keeps Application free of `Microsoft.AspNetCore.Http`.
 
 ---
 
-## 8. Phase 2+ (queued, not part of this pass)
+## 8. Feature phases and execution log
 
 | Phase | Slice | Notes |
 | --- | --- | --- |
-| 2 | **Rename entities and primary keys** (D12) | `Product`→`ProductEntity` style names, `Id`→`<Entity>Id` keys, folders `OrderAggregare`→`OrderAggregate`; one migration of `RenameColumn`/`RenameTable` so data survives. DTOs keep `[JsonPropertyName("id")]`, so the wire keeps `"id"`. Also lands `[CheckKeyExists]` + the non-generic repository bases. No kernel changes needed — keys already come from EF metadata. |
-| 3 | Products | reference slice: `ProductListQuery`/`ProductDetailQuery`/`ProductFiltersQuery`/`Create|Update|DeleteProductCommand`, `ProductControls`, `IImageStorage`; `ProductMcpTools` moves onto `IMediator` with identical tool names |
-| 4 | Basket | `IBuyerIdentity` replaces `User.Identity.Name` + `buyerId` cookie handling |
+| 2 | **Rename entities and primary keys — implemented** (D12) | Commerce entity/key renames, five RenameColumn operations, `[CheckKeyExists]` and repository bases. Physical table and Identity names were preserved; the proposed OrderAggregare spelling cleanup remains unimplemented. DTO wire IDs remain `id`. See §8.1. |
+| 3 | Products — implemented | Reference CQRS slice, ProductControls, IImageStorage and MCP delegation to the same Application requests. See §8.2. |
+| 4 | Basket — implemented | IBuyerIdentity, aggregate repository and authoritative basket envelopes. See §8.3. |
 | 5 | Orders — implemented | Dedicated checkout repository owns one serializable transaction and one `SaveChanges`; stock rules live in `OrderControls`. See §8.5. |
 | 6 | Account — implemented | `ITokenGenerator` + `IIdentityService`; transactional guest-basket transfer on login, preserving the legacy replacement rule. See §8.6. |
 | 7 | Payments — implemented | `IPaymentGateway`, CQRS payment commands, guarded payment-column updates and verified webhook processing; unknown/pending events keep HTTP 200 `EmptyResult()`. See §8.7. |
 | 8 | API shell — implemented | Thin Program, explicit application/API registration, feature binding/exception envelopes, and preserved Buggy/authentication/webhook protocols. See §8.8. |
 | 8a | **React client contract migration — implemented** | Typed envelope/error adapters, account and form failures, search/filter/sort inputs, correct paging, authoritative basket state, paged orders and checkout responses. npm ci, TypeScript, 23 client tests and production build passed; live external-service verification remains. See §8.9. |
-| 9 | Docs | `README.md` API section, `docs/architecture.md` |
+| 9 | Docs — implemented | Current README, architecture and API-contract references, verified local links/JSON examples and anonymous MCP discovery. See §8.10. |
 | 10 | Switch on Redis + RabbitMQ | after the server has them — uncomment two lines, set four variables, verify degraded mode. See §9 |
 
 ### 8.1 Phase 2 — executed (result log)
@@ -1239,6 +1239,43 @@ performed. Gateway/HTTP responses in client tests are controlled fixtures; the
 backend's 136-test verification is recorded in Phase 8 and backend code is unchanged
 in this phase. Phase 9 documentation and real-environment acceptance remain next.
 
+### 8.10 Phase 9 — executed: current documentation
+
+React Phase 8a was committed as `61c0404`
+(`Adapt React flows to CQRS envelopes and preserve intentional error handling`).
+Phase 9 changes documentation only; it does not deploy or alter application code.
+
+- [README](../README.md) now describes the layered projects, Mapster, local API/
+  React workflow, environment keys, actual `/health/app` and `/health/db` routes,
+  verification commands, isolated client build and deployment boundaries.
+- [Architecture](architecture.md) records project dependencies, CQRS/Controls,
+  transaction ownership, Identity, buyer/guest transfer, payment/webhook behaviour,
+  client responsibilities and remaining real-environment verification.
+- [API contracts](api-contracts.md) lists all 18 business/provider routes,
+  envelope variants, paging/search/form inputs, empty states, webhook statuses,
+  the five preserved Buggy demonstrations and seven MCP tool names.
+
+The documents distinguish query boolean `result` from command numeric `result`,
+using `succeeded` as the shared outcome flag. They do not claim that HTTP controller
+authorization covers MCP tools, that Stripe and PostgreSQL share a transaction, or
+that the old deployed image proves the refactor. The anonymous MCP mutation boundary,
+payment-before-order timing, image cleanup and remaining naming proposals are
+documented as current limitations rather than silently changed in this phase.
+
+**Verification:** relative Markdown links/anchors and JSON examples were checked
+against local files. A temporary local API process negotiated MCP protocol
+2025-03-26 and listed `mcp_test`, `list_products`, `get_product`,
+`get_product_filters`, `create_product`, `update_product`, `delete_product`.
+No business tool or mutation was invoked; the database was deliberately unreachable.
+The previously recorded 136 backend and 23 client tests/builds were not repeated
+for this documentation-only change. No server deployment or external payment test
+was performed.
+
+Phase 10 requires actual server preparation and concrete cache/message consumers.
+It is not enabled automatically by completing documentation. Release verification
+against PostgreSQL, Stripe test mode and the deployment image remains outstanding;
+see the architecture checklist.
+
 ## 9. Deferred infrastructure — the switch-on runbook
 
 Redis and RabbitMQ are **packaged, adapted and inert** after Phase 1 (D9). This
@@ -1293,9 +1330,11 @@ host startup when the broker is down).
 
 Best first use once switched on: `ProductFiltersQuery` (brands/types distinct
 lists — cheap to cache, invalidated on product write) and an
-`OrderCreatedMessage` published from `CreateOrderCommand`. Both are Phase 2/4
-work, so the seams will have a real consumer by then rather than staying
-speculative.
+`OrderCreatedMessage` published from `CreateOrderCommand`. These are still proposed
+consumers: the completed feature slices do not currently use the cache/bus seams.
+Adding registrations alone will not create invalidation, publication, delivery
+guarantees or a consumer topology; define and verify that behaviour as part of
+Phase 10.
 
 ---
 
