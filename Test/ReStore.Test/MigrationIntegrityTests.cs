@@ -34,7 +34,8 @@ public class MigrationIntegrityTests
         "20230603090725_PublicIdAdded",
         "20261025091004_RenameEntityKeys",
         "20261102090000_UseIranianRialCatalog",
-        "20261115090000_AddPaymentAttempts"
+        "20261115090000_AddPaymentAttempts",
+        "20261115091000_AddPendingCheckoutRequest"
     ];
 
     private static Type[] MigrationTypes => typeof(StoreContext).Assembly.GetTypes()

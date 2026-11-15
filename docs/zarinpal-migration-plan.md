@@ -5,7 +5,7 @@
 1. Rial storage, toman display, demo prices and shipping rules — implemented; see verification below.
 2. Add validated ZarinPal sandbox/production settings — implemented.
 3. Persist payment attempts with order, rial amount, authority and reference — implemented.
-4. Persist pending orders before redirect; deduplicate checkout submission.
+4. Persist pending orders before redirect and deduplicate checkout submission — implemented.
 5. Reserve stock with expiry and release on cancellation; define paid-after-expiry handling.
 6. Request ZarinPal payments from saved order totals and persist authority before returning a redirect URL.
 7. Verify callbacks server-side and finalize payment exactly once.
@@ -128,3 +128,19 @@ An order may have multiple attempts. A filtered unique index permits at most one
 successful attempt per order. The database rejects nonpositive amounts and prevents
 deletion of orders referenced by attempts. Existing orders have no new payment
 attempts until checkout creates them in a later step.
+
+## Step 4 pending orders
+
+Send an authenticated POST to /api/orders/pending with a new UUID in
+checkoutRequestId, shippingAddress, and optional saveAddress. The response uses
+the existing insert envelope and returns the order ID in key. Read it through
+GET /api/orders/{id} to see Pending status, line items, address and the rial total.
+
+Reuse the UUID when retrying the same submission. Deduplication is scoped to
+the signed-in buyer. A replay returns the original order, including when the
+basket or the submitted address has changed. Use a new UUID for a new order.
+
+The server snapshots prices and calculates shipping. Step 4 leaves the basket
+and stock in place. A pending order still needs the stock reservation from
+step 5 before it can be sent to ZarinPal. The migration adds the checkout UUID
+and allows new orders to omit their legacy Stripe intent.

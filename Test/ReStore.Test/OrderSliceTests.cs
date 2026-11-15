@@ -29,6 +29,9 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     private CreateOrderCommandHandler Create(string buyer, StoreContext? context = null)
         => new(Writes(context), new FakeBuyerIdentity().AsAuthenticated(buyer), new NoopAppLogger());
 
+    private CreatePendingOrderCommandHandler CreatePending(string buyer)
+        => new(Writes(), new FakeBuyerIdentity().AsAuthenticated(buyer), new NoopAppLogger());
+
     private OrderListQueryHandler List(string buyer)
         => new(Reads(), _store.Mapper, new NoopAppLogger(), new FakeBuyerIdentity().AsAuthenticated(buyer));
 
@@ -52,6 +55,51 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         await _store.Context.SaveChangesAsync();
         _store.Context.ChangeTracker.Clear();
         return (buyer, product.ProductId);
+    }
+
+    [Fact]
+    public async Task Pending_checkout_snapshots_the_order_and_reuses_the_key_only_for_the_same_buyer()
+    {
+        var first = await SeedBasket();
+        var second = await SeedBasket(1_000);
+        var request = new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() };
+        var context = _store.Context;
+        var basket = await context.Baskets.SingleAsync(x => x.BuyerId == first.Buyer);
+        basket.PaymentIntentId = null;
+        await context.SaveChangesAsync();
+
+        var created = await CreatePending(first.Buyer).Handle(request, CancellationToken.None);
+        created.Succeeded.Should().BeTrue(created.Error);
+        var product = await context.Products.SingleAsync(x => x.ProductId == first.ProductId);
+        product.QuantityInStock.Should().Be(10);
+        product.Price = 999;
+        await context.SaveChangesAsync();
+        request.ShippingAddress = Address("Changed");
+        var replay = await CreatePending(first.Buyer).Handle(request, CancellationToken.None);
+        var other = await CreatePending(second.Buyer).Handle(request, CancellationToken.None);
+        replay.Succeeded.Should().BeTrue(replay.Error);
+        replay.Key.Should().Be(created.Key);
+        other.Succeeded.Should().BeTrue(other.Error);
+        other.Key.Should().NotBe(created.Key);
+
+        var saved = await Detail(first.Buyer).Handle(new OrderDetailQuery { Id = created.Key }, CancellationToken.None);
+        saved.Succeeded.Should().BeTrue(saved.Error);
+        saved.Data!.Total.Should().Be(500_600);
+        saved.Data.OrderItems.Should().ContainSingle().Which.Price.Should().Be(300);
+        saved.Data.ShippingAddress.FullName.Should().Be("Buyer");
+        saved.Data.OrderStatus.Should().Be("Pending");
+        (await context.Orders.AsNoTracking().SingleAsync(x => x.OrderId == created.Key)).PaymentIntentId.Should().BeNull();
+        (await context.Orders.CountAsync(x => x.BuyerId == first.Buyer)).Should().Be(1);
+        (await context.Baskets.AnyAsync(x => x.BuyerId == first.Buyer)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Pending_checkout_rejects_an_empty_request_key()
+    {
+        var result = await CreatePending("missing-key").Handle(
+            new CreatePendingOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Contain("checkout request ID");
     }
 
     [Theory]

@@ -23,6 +23,11 @@ public class OrdersController(IMediator mediator) : BaseApiController
         [FromRoute] OrderDetailQuery query, CancellationToken cancellationToken)
         => await mediator.Send(query, cancellationToken);
 
+    [HttpPost("pending")]
+    public async Task<InsertReturn> CreatePendingOrder(
+        [FromBody] CreatePendingOrderCommand command, CancellationToken cancellationToken)
+        => await mediator.Send(command, cancellationToken);
+
     [HttpPost]
     public async Task<InsertReturn> CreateOrder(
         [FromBody] CreateOrderCommand command, CancellationToken cancellationToken)

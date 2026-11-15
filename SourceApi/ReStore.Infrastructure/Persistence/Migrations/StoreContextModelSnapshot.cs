@@ -186,6 +186,8 @@ namespace ReStore.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("CheckoutRequestId").HasColumnType("uuid");
+
                     b.Property<long>("DeliveryFee")
                         .HasColumnType("bigint");
 
@@ -196,13 +198,14 @@ namespace ReStore.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("PaymentIntentId")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<long>("SubTotal")
                         .HasColumnType("bigint");
 
                     b.HasKey("OrderId");
+
+                    b.HasIndex("BuyerId", "CheckoutRequestId").IsUnique();
 
                     b.ToTable("Orders");
                 });

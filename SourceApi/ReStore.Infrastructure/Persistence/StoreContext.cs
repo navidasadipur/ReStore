@@ -54,6 +54,8 @@ namespace ReStore.Infrastructure.Persistence
             // by diffing this model against the migration snapshot.
             builder.Entity<OrderEntity>()
                 .OwnsOne(order => order.ShippingAddress);
+            builder.Entity<OrderEntity>()
+                .HasIndex(order => new { order.BuyerId, order.CheckoutRequestId }).IsUnique();
 
             builder.Entity<OrderItemEntity>()
                 .OwnsOne(item => item.ItemOrdered);
