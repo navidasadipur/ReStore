@@ -13,3 +13,6 @@ public class ProcessPaymentWebhookCommand : IRequest<UpdateReturn>
 }
 
 public sealed record StartZarinpalPaymentCommand(int OrderId) : IRequest<DtoReturnOne<ZarinpalPaymentLinkDto>>;
+
+public sealed record VerifyZarinpalPaymentCommand(string Authority, string Status)
+    : IRequest<DtoReturnOne<ZarinpalPaymentResultDto>>;

@@ -7,4 +7,7 @@ public interface IZarinpalPaymentService
 {
     Task<DomainResponseOne<ZarinpalPaymentLinkDto>> StartAsync(string buyerId, int orderId,
         CancellationToken cancellationToken);
+
+    Task<DomainResponseOne<ZarinpalPaymentResultDto>> VerifyAsync(string authority, string status,
+        CancellationToken cancellationToken);
 }

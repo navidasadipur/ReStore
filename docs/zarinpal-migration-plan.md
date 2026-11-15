@@ -7,7 +7,7 @@
 3. Persist payment attempts with order, rial amount, authority and reference — implemented.
 4. Persist pending orders before redirect and deduplicate checkout submission — implemented.
 5. Request a Sandbox payment for a saved order and persist Authority before returning the redirect URL — implemented.
-6. Verify the callback from the backend. Record the reference and mark the order paid once.
+6. Verify the callback from the backend, record the reference and mark the order paid once — implemented.
 7. Replace the Stripe card form with a ZarinPal button and show the confirmed result. Run one complete Sandbox purchase from the storefront.
 8. Remove unused Stripe integration, retain historical records, and configure production after onboarding.
 
@@ -111,7 +111,7 @@ dotnet test Test/ReStore.Test/ReStore.Test.csproj --configuration Release --filt
 
 The tests load the actual checked-in JSON, check both environment hosts and DI overrides,
 and reject malformed modes, merchants and callbacks before database or network access.
-The callback endpoint does not exist yet (step 6); checkout remains disabled until later steps.
+The Sandbox callback endpoint is available in step 6. The storefront integration is step 7.
 
 Step 2 verification: all 160 backend tests passed, including 23 ZarinPal configuration cases. The API compiled successfully. No API startup against the configured database, database migration, external payment request or deployment was performed.
 
@@ -159,3 +159,17 @@ from a successful response and open it to reach the Sandbox payment page.
 The server uses the saved rial total and stores Authority before sending the URL.
 Repeat requests reuse the pending attempt. The endpoint currently accepts Sandbox
 configuration. Step 6 adds callback verification and updates the order status.
+
+## Step 6 Sandbox callback
+
+After completing the Sandbox payment, the browser returns to the configured callback
+at GET /api/payments/zarinpal/callback. The payment result envelope includes orderId,
+paid and referenceId. An OK callback asks ZarinPal to verify the saved authority and
+rial amount. A NOK callback reports the stored result and leaves an unconfirmed
+attempt pending. Reloading a completed callback reads the stored result.
+
+Verification codes 100 and 101 confirm payment. If 101 gives no reference, the order
+is recorded as paid with a null reference. The payment attempt, order status and any
+stock deduction are committed together. If stock is insufficient, the verified payment
+is still saved and stock stays as it was. An unconfirmed response leaves the order
+pending for a later retry.

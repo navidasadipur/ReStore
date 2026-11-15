@@ -74,6 +74,82 @@ public sealed class ZarinpalPaymentServiceTests
         (await store.Context.PaymentAttempts.CountAsync()).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(100, 987654L, 10, 8)]
+    [InlineData(100, 987654L, 1, 1)]
+    [InlineData(101, null, 10, 8)]
+    public async Task Verified_callbacks_keep_payment_and_stock_consistent_on_replay(
+        int code, long? reference, int initialStock, int expectedStock)
+    {
+        using var store = new SqliteStore();
+        var (orderId, productId) = await SaveAttemptAsync(store, initialStock);
+        var response = JsonSerializer.Serialize(new { data = new { code, ref_id = reference } });
+        using var transport = new GatewayTransport(response);
+        using var http = new HttpClient(transport);
+        var service = new ZarinpalPaymentService(http, Settings(), store.Context);
+
+        var first = await service.VerifyAsync(Authority, "OK", CancellationToken.None);
+        var replay = await service.VerifyAsync(Authority, "OK", CancellationToken.None);
+
+        first.Result.Should().BeTrue(first.Error);
+        first.Data!.Paid.Should().BeTrue();
+        replay.Data!.ReferenceId.Should().Be(reference);
+        transport.Calls.Should().Be(1);
+        transport.Target!.AbsoluteUri.Should().Be("https://sandbox.zarinpal.com/pg/v4/payment/verify.json");
+        using var sent = JsonDocument.Parse(transport.Body!);
+        sent.RootElement.GetProperty("amount").GetInt64().Should().Be(1_500_000);
+        sent.RootElement.GetProperty("authority").GetString().Should().Be(Authority);
+        (await store.Context.Orders.AsNoTracking().SingleAsync(x => x.OrderId == orderId))
+            .OrderStatus.Should().Be(OrderStatus.PaymentReceived);
+        var attempt = await store.Context.PaymentAttempts.AsNoTracking().SingleAsync();
+        attempt.Status.Should().Be(PaymentAttemptStatus.Succeeded);
+        attempt.RefId.Should().Be(reference);
+        (await store.Context.Products.AsNoTracking().SingleAsync(x => x.ProductId == productId))
+            .QuantityInStock.Should().Be(expectedStock);
+    }
+
+    [Fact]
+    public async Task Cancelled_or_unconfirmed_callbacks_do_not_mark_the_order_paid()
+    {
+        using var store = new SqliteStore();
+        var (orderId, _) = await SaveAttemptAsync(store, 10);
+        using var transport = new GatewayTransport("""{"data":{"code":-51}}""");
+        using var http = new HttpClient(transport);
+        var service = new ZarinpalPaymentService(http, Settings(), store.Context);
+
+        var cancelled = await service.VerifyAsync(Authority, "NOK", CancellationToken.None);
+        cancelled.Data!.Paid.Should().BeFalse();
+        var unknown = await service.VerifyAsync("S" + new string('1', 35), "OK", CancellationToken.None);
+        unknown.Result.Should().BeFalse();
+        transport.Calls.Should().Be(0);
+
+        (await service.VerifyAsync(Authority, "OK", CancellationToken.None)).Result.Should().BeFalse();
+        transport.Calls.Should().Be(1);
+        (await store.Context.PaymentAttempts.AsNoTracking().SingleAsync()).Status.Should().Be(PaymentAttemptStatus.Pending);
+        (await store.Context.Orders.AsNoTracking().SingleAsync(x => x.OrderId == orderId))
+            .OrderStatus.Should().Be(OrderStatus.Pending);
+    }
+
+    private static async Task<(int OrderId, int ProductId)> SaveAttemptAsync(SqliteStore store, int stock)
+    {
+        var product = store.SeedProduct(price: 500_000);
+        store.Context.Products.Attach(product);
+        product.QuantityInStock = stock;
+        var order = await SaveOrderAsync(store);
+        order.OrderItems.Add(new OrderItemEntity
+        {
+            ItemOrdered = new ProductItemOrdered { ProductId = product.ProductId, Name = "Test", PictureUrl = "" },
+            Price = 500_000, Quantity = 2
+        });
+        store.Context.PaymentAttempts.Add(new PaymentAttemptEntity
+        {
+            OrderId = order.OrderId, IsSandbox = true, Authority = Authority, AmountInRials = 1_500_000
+        });
+        await store.Context.SaveChangesAsync();
+        store.Context.ChangeTracker.Clear();
+        return (order.OrderId, product.ProductId);
+    }
+
     private static ZarinpalSettings Settings() => ZarinpalSettings.FromConfiguration(new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {

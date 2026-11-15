@@ -24,6 +24,16 @@ public class PaymentsController(IMediator mediator) : BaseApiController
         => await mediator.Send(new StartZarinpalPaymentCommand(orderId), cancellationToken);
 
     [AllowAnonymous]
+    [EnvelopeResponse]
+    [HttpGet("zarinpal/callback")]
+    public async Task<DtoReturnOne<ZarinpalPaymentResultDto>> ZarinpalCallback(
+        [FromQuery] string authority, [FromQuery] string status, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return await mediator.Send(new VerifyZarinpalPaymentCommand(authority, status), cancellationToken);
+    }
+
+    [AllowAnonymous]
     [HttpPost("webhook")]
     public async Task<ActionResult> StripeWebhook(CancellationToken cancellationToken)
     {

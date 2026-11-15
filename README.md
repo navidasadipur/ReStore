@@ -93,7 +93,7 @@ uses Sandbox and a test UUID; startup logs only the selected mode. Invalid or mi
 settings fail startup without including their values in the error. Configure real merchant
 IDs through environment variables or development user secrets, not frontend code.
 See [step 2 configuration examples](docs/zarinpal-migration-plan.md#step-2-configuration).
-The callback route will be implemented in step 6; these settings do not enable checkout yet.
+The Sandbox payment and callback routes are available in the API. The storefront will use them in step 7.
 
 ## API and errors
 
