@@ -6,7 +6,7 @@
 2. Add validated ZarinPal sandbox/production settings — implemented.
 3. Persist payment attempts with order, rial amount, authority and reference — implemented.
 4. Persist pending orders before redirect and deduplicate checkout submission — implemented.
-5. Request a Sandbox payment for a saved order. Persist Authority before returning the redirect URL.
+5. Request a Sandbox payment for a saved order and persist Authority before returning the redirect URL — implemented.
 6. Verify the callback from the backend. Record the reference and mark the order paid once.
 7. Replace the Stripe card form with a ZarinPal button and show the confirmed result. Run one complete Sandbox purchase from the storefront.
 8. Remove unused Stripe integration, retain historical records, and configure production after onboarding.
@@ -111,7 +111,7 @@ dotnet test Test/ReStore.Test/ReStore.Test.csproj --configuration Release --filt
 
 The tests load the actual checked-in JSON, check both environment hosts and DI overrides,
 and reject malformed modes, merchants and callbacks before database or network access.
-The callback endpoint does not exist yet (step 7); checkout remains disabled until later steps.
+The callback endpoint does not exist yet (step 6); checkout remains disabled until later steps.
 
 Step 2 verification: all 160 backend tests passed, including 23 ZarinPal configuration cases. The API compiled successfully. No API startup against the configured database, database migration, external payment request or deployment was performed.
 
@@ -149,3 +149,13 @@ paid. If all items are still available, deduct their quantities in the same data
 transaction. If stock is insufficient, leave stock unchanged and still record the
 verified payment. An out-of-stock paid order may require manual handling. Stock
 reservation, expiry, and automated handling for that case are outside the current scope.
+
+## Step 5 Sandbox payment link
+
+After creating an order with POST /api/orders/pending, use its key in an authenticated
+POST /api/payments/zarinpal/{orderId}. The request has no body. Read data.paymentUrl
+from a successful response and open it to reach the Sandbox payment page.
+
+The server uses the saved rial total and stores Authority before sending the URL.
+Repeat requests reuse the pending attempt. The endpoint currently accepts Sandbox
+configuration. Step 6 adds callback verification and updates the order status.

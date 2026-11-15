@@ -11,3 +11,5 @@ public class ProcessPaymentWebhookCommand : IRequest<UpdateReturn>
     public string Payload { get; set; } = string.Empty;
     public string? Signature { get; set; }
 }
+
+public sealed record StartZarinpalPaymentCommand(int OrderId) : IRequest<DtoReturnOne<ZarinpalPaymentLinkDto>>;
