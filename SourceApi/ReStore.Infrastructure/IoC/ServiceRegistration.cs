@@ -15,6 +15,7 @@ using ReStore.Infrastructure.Caching;
 using ReStore.Infrastructure.Mapping;
 using ReStore.Infrastructure.Messaging;
 using ReStore.Infrastructure.Persistence;
+using ReStore.Infrastructure.Payments;
 using ReStore.Infrastructure.Repositories;
 using ReStore.Infrastructure.Services;
 
@@ -34,6 +35,9 @@ namespace ReStore.Infrastructure.IoC
             this IServiceCollection services,
             IConfiguration configuration)
         {
+            // Validate eagerly, before database initialization or any payment request.
+            services.AddSingleton(ZarinpalSettings.FromConfiguration(configuration));
+
             services.AddDbContext<StoreContext>(options =>
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 

@@ -76,7 +76,9 @@ before running against an existing database. Existing demo orders are repriced t
 | --- | --- |
 | `ConnectionStrings__DefaultConnection` | PostgreSQL connection |
 | `JWTSettings__TokenKey` | HS512 token signing and validation; use at least 64 bytes of signing material |
-| `StripeSettings__SecretKey` | Creating/updating Stripe payment intents |
+| `ZarinpalSettings__Mode` | `Sandbox` (default) or `Production`; validated at startup |
+| `ZarinpalSettings__MerchantId` | Test UUID in Sandbox; merchant ID from the ZarinPal panel in Production |
+| `ZarinpalSettings__CallbackUrl` | Absolute backend callback URL; Production requires HTTPS and a non-loopback host |
 | `StripeSettings__WhSecret` | Verifying raw webhook payload signatures |
 | `Cloudinary__CloudName`, `Cloudinary__ApiKey`, `Cloudinary__ApiSecret` | Product image storage |
 | `Redis__Enabled`, `Redis__Configuration` | Optional Redis adapter, after explicitly switching its registration |
@@ -85,6 +87,13 @@ before running against an existing database. Existing demo orders are repriced t
 The browser's Stripe publishable key currently lives in
 `client/src/features/checkout/CheckoutWrapper.tsx`. Changing the API's
 `StripeSettings__PublishableKey` alone does not change that client constant.
+
+ZarinPal settings are validated before database initialization. The checked-in configuration
+uses Sandbox and a test UUID; startup logs only the selected mode. Invalid or missing
+settings fail startup without including their values in the error. Configure real merchant
+IDs through environment variables or development user secrets, not frontend code.
+See [step 2 configuration examples](docs/zarinpal-migration-plan.md#step-2-configuration).
+The callback route will be implemented in step 7; these settings do not enable checkout yet.
 
 ## API and errors
 

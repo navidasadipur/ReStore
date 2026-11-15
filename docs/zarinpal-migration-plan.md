@@ -3,7 +3,7 @@
 ## Small delivery steps
 
 1. Rial storage, toman display, demo prices and shipping rules — implemented; see verification below.
-2. Add validated ZarinPal sandbox/production settings.
+2. Add validated ZarinPal sandbox/production settings — implemented.
 3. Persist payment attempts with order, rial amount, authority and reference.
 4. Persist pending orders before redirect; deduplicate checkout submission.
 5. Reserve stock with expiry and release on cancellation; define paid-after-expiry handling.
@@ -67,3 +67,52 @@ are recorded in the delivery message; live PostgreSQL upgrade and browser checko
 not established by these tests.
 
 After removing legacy USD support: 137 backend tests, 25 client tests and the TypeScript check passed. PostgreSQL migration SQL generation and model parity passed; no live database upgrade was run. The earlier production build passed before this simplification; it was not repeated.
+
+## Step 2 configuration
+
+The server validates ZarinpalSettings during infrastructure registration, before database
+initialization. Mode must explicitly be Sandbox or Production; unrecognized values never
+fall back to live payments. MerchantId must be a non-empty UUID. CallbackUrl must be an
+absolute HTTP(S) URL with no embedded credentials or fragment. HTTP is accepted only for
+loopback callbacks in Sandbox; Production requires HTTPS and a non-loopback host and
+rejects the checked-in test merchant. Validation checks configuration syntax, not whether
+ZarinPal has activated the merchant or the callback domain matches the panel.
+
+The checked-in defaults are Sandbox, test merchant
+11111111-1111-4111-8111-111111111111, and
+http://localhost:5000/api/payments/zarinpal/callback. The sandbox permits an arbitrary
+UUID according to [ZarinPal's sandbox documentation](https://www.zarinpal.com/docs/paymentGateway/sandBox).
+The base host is derived exclusively from Mode: https://sandbox.zarinpal.com/ or
+https://payment.zarinpal.com/, following the
+[official connection guide](https://www.zarinpal.com/docs/paymentGateway/connectToGateway).
+No request is sent in this step.
+
+For local testing, the defaults need no changes. If using a different API port, override:
+
+~~~powershell
+$env:ZarinpalSettings__CallbackUrl = 'http://localhost:5001/api/payments/zarinpal/callback'
+~~~
+
+Production requires all three overrides, supplied by the deployment environment:
+
+~~~powershell
+$env:ZarinpalSettings__Mode = 'Production'
+$env:ZarinpalSettings__MerchantId = '<merchant-UUID-from-ZarinPal-panel>'
+$env:ZarinpalSettings__CallbackUrl = 'https://your-domain.example/api/payments/zarinpal/callback'
+~~~
+
+Replace the placeholders before startup. Do not put real credentials in committed JSON or
+browser configuration. ASP.NET Core environment variables and user secrets override the
+checked-in values. The selected mode appears in the startup log, without the merchant ID.
+
+To review validation without starting the API or applying migrations:
+
+~~~powershell
+dotnet test Test/ReStore.Test/ReStore.Test.csproj --configuration Release --filter FullyQualifiedName~ZarinpalSettingsTests --no-restore --disable-build-servers -m:1 -p:UseSharedCompilation=false
+~~~
+
+The tests load the actual checked-in JSON, check both environment hosts and DI overrides,
+and reject malformed modes, merchants and callbacks before database or network access.
+The callback endpoint does not exist yet (step 7); checkout remains disabled until later steps.
+
+Step 2 verification: all 160 backend tests passed, including 23 ZarinPal configuration cases. The API compiled successfully. No API startup against the configured database, database migration, external payment request or deployment was performed.
