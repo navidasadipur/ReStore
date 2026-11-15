@@ -4,7 +4,7 @@
 
 1. Rial storage, toman display, demo prices and shipping rules — implemented; see verification below.
 2. Add validated ZarinPal sandbox/production settings — implemented.
-3. Persist payment attempts with order, rial amount, authority and reference.
+3. Persist payment attempts with order, rial amount, authority and reference — implemented.
 4. Persist pending orders before redirect; deduplicate checkout submission.
 5. Reserve stock with expiry and release on cancellation; define paid-after-expiry handling.
 6. Request ZarinPal payments from saved order totals and persist authority before returning a redirect URL.
@@ -116,3 +116,15 @@ and reject malformed modes, merchants and callbacks before database or network a
 The callback endpoint does not exist yet (step 7); checkout remains disabled until later steps.
 
 Step 2 verification: all 160 backend tests passed, including 23 ZarinPal configuration cases. The API compiled successfully. No API startup against the configured database, database migration, external payment request or deployment was performed.
+
+## Step 3 payment attempts
+
+Migration 20261115090000_AddPaymentAttempts adds the PaymentAttempts table. Each row
+stores the order ID, amount in rials, Sandbox flag, status, creation time in UTC,
+optional Authority and optional RefId. Authority can be assigned after a request to
+ZarinPal. The same Authority is unique within each environment.
+
+An order may have multiple attempts. A filtered unique index permits at most one
+successful attempt per order. The database rejects nonpositive amounts and prevents
+deletion of orders referenced by attempts. Existing orders have no new payment
+attempts until checkout creates them in a later step.

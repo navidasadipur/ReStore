@@ -231,6 +231,30 @@ namespace ReStore.Infrastructure.Persistence.Migrations
                     b.ToTable("OrderItem", (string)null);
                 });
 
+            modelBuilder.Entity("ReStore.Domain.Entities.OrderAggregare.PaymentAttemptEntity", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    b.Property<long>("AmountInRials").HasColumnType("bigint");
+                    b.Property<string>("Authority").HasMaxLength(36).HasColumnType("character varying(36)");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<bool>("IsSandbox").HasColumnType("boolean");
+                    b.Property<int>("OrderId").HasColumnType("integer");
+                    b.Property<long?>("RefId").HasColumnType("bigint");
+                    b.Property<int>("Status").HasColumnType("integer");
+
+                    b.HasKey("Id");
+                    b.HasIndex("OrderId");
+                    b.HasIndex(new[] { "OrderId" }, "IX_PaymentAttempts_OneSuccessPerOrder")
+                        .IsUnique().HasFilter("\"Status\" = 1");
+                    b.HasIndex("IsSandbox", "Authority").IsUnique();
+
+                    b.ToTable("PaymentAttempts", t =>
+                    {
+                        t.HasCheckConstraint("CK_PaymentAttempts_PositiveAmount", "\"AmountInRials\" > 0");
+                    });
+                });
+
             modelBuilder.Entity("ReStore.Domain.Entities.ProductEntity", b =>
                 {
                     b.Property<int>("ProductId")
@@ -584,6 +608,15 @@ namespace ReStore.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ReStore.Domain.Entities.BasketEntity", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("ReStore.Domain.Entities.OrderAggregare.PaymentAttemptEntity", b =>
+                {
+                    b.HasOne("ReStore.Domain.Entities.OrderAggregare.OrderEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ReStore.Domain.Entities.OrderAggregare.OrderEntity", b =>

@@ -55,6 +55,50 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     }
 
     [Theory]
+    [InlineData(PaymentAttemptStatus.Pending, true, 500_600)]
+    [InlineData(PaymentAttemptStatus.Succeeded, false, 500_600)]
+    [InlineData(PaymentAttemptStatus.Pending, false, 0)]
+    public async Task Payment_attempts_preserve_retries_and_reject_conflicting_records(
+        PaymentAttemptStatus status, bool reuseAuthority, long amountInRials)
+    {
+        var seed = await SeedBasket();
+        var order = await Create(seed.Buyer).Handle(
+            new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        order.Succeeded.Should().BeTrue(order.Error);
+        var context = _store.Context;
+        var firstAuthority = Guid.NewGuid().ToString("D");
+        context.PaymentAttempts.AddRange(
+            new PaymentAttemptEntity { OrderId = order.Key, AmountInRials = 500_600, Status = PaymentAttemptStatus.Failed },
+            new PaymentAttemptEntity { OrderId = order.Key, AmountInRials = 500_600, Status = PaymentAttemptStatus.Pending },
+            new PaymentAttemptEntity
+            {
+                OrderId = order.Key, AmountInRials = 500_600, Status = PaymentAttemptStatus.Succeeded,
+                Authority = firstAuthority, RefId = 123456
+            });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        context.PaymentAttempts.Add(new PaymentAttemptEntity
+        {
+            OrderId = order.Key, Status = status, AmountInRials = amountInRials,
+            Authority = reuseAuthority ? firstAuthority : Guid.NewGuid().ToString("D")
+        });
+        try
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+        }
+        finally
+        {
+            context.ChangeTracker.Clear();
+        }
+
+        var attempts = await context.PaymentAttempts.AsNoTracking().Where(x => x.OrderId == order.Key).ToListAsync();
+        attempts.Should().HaveCount(3);
+        attempts.Should().ContainSingle(x => x.Status == PaymentAttemptStatus.Succeeded)
+            .Which.RefId.Should().Be(123456);
+    }
+
+    [Theory]
     [InlineData(5_000_000, 500_000)]
     [InlineData(5_000_001, 0)]
     public async Task Checkout_persists_snapshot_stock_and_basket_removal(long price, long deliveryFee)

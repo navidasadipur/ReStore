@@ -16,6 +16,8 @@ namespace ReStore.Infrastructure.Persistence
         public DbSet<BasketEntity> Baskets { get; set; }
         public DbSet<OrderEntity> Orders { get; set; }
 
+        public DbSet<PaymentAttemptEntity> PaymentAttempts { get; set; }
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -25,6 +27,19 @@ namespace ReStore.Infrastructure.Persistence
                 .WithOne()
                 .HasForeignKey<UserAddress>(a => a.Id)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<PaymentAttemptEntity>(attempt =>
+            {
+                attempt.ToTable("PaymentAttempts", table =>
+                    table.HasCheckConstraint("CK_PaymentAttempts_PositiveAmount", "\"AmountInRials\" > 0"));
+                attempt.Property(payment => payment.Authority).HasMaxLength(36);
+                attempt.HasOne<OrderEntity>().WithMany().HasForeignKey(payment => payment.OrderId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                attempt.HasIndex(payment => payment.OrderId);
+                attempt.HasIndex(payment => new { payment.IsSandbox, payment.Authority }).IsUnique();
+                attempt.HasIndex(payment => payment.OrderId, "IX_PaymentAttempts_OneSuccessPerOrder")
+                    .IsUnique().HasFilter($"\"Status\" = {(int)PaymentAttemptStatus.Succeeded}");
+            });
 
             builder.Entity<Role>()
                 .HasData(

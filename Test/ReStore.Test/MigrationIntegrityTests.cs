@@ -33,7 +33,8 @@ public class MigrationIntegrityTests
         "20230531143443_makePictureUrlNullable",
         "20230603090725_PublicIdAdded",
         "20261025091004_RenameEntityKeys",
-        "20261102090000_UseIranianRialCatalog"
+        "20261102090000_UseIranianRialCatalog",
+        "20261115090000_AddPaymentAttempts"
     ];
 
     private static Type[] MigrationTypes => typeof(StoreContext).Assembly.GetTypes()
