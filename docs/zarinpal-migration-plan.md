@@ -6,12 +6,10 @@
 2. Add validated ZarinPal sandbox/production settings — implemented.
 3. Persist payment attempts with order, rial amount, authority and reference — implemented.
 4. Persist pending orders before redirect and deduplicate checkout submission — implemented.
-5. Reserve stock with expiry and release on cancellation; define paid-after-expiry handling.
-6. Request ZarinPal payments from saved order totals and persist authority before returning a redirect URL.
-7. Verify callbacks server-side and finalize payment exactly once.
-8. Replace Stripe card entry with ZarinPal redirect checkout.
-9. Add result, retry and recovery pages; exercise the complete sandbox flow.
-10. Remove unused Stripe integration, retain historical records, document production setup and verify a small real payment after onboarding.
+5. Request a Sandbox payment for a saved order. Persist Authority before returning the redirect URL.
+6. Verify the callback from the backend. Record the reference and mark the order paid once.
+7. Replace the Stripe card form with a ZarinPal button and show the confirmed result. Run one complete Sandbox purchase from the storefront.
+8. Remove unused Stripe integration, retain historical records, and configure production after onboarding.
 
 Each step should be reviewed separately, with its own commit and observable API or UI result.
 
@@ -140,7 +138,14 @@ Reuse the UUID when retrying the same submission. Deduplication is scoped to
 the signed-in buyer. A replay returns the original order, including when the
 basket or the submitted address has changed. Use a new UUID for a new order.
 
-The server snapshots prices and calculates shipping. Step 4 leaves the basket
-and stock in place. A pending order still needs the stock reservation from
-step 5 before it can be sent to ZarinPal. The migration adds the checkout UUID
-and allows new orders to omit their legacy Stripe intent.
+The server snapshots prices and calculates shipping. Creating a pending order leaves
+the basket and available stock in place. The migration adds the checkout UUID and
+allows new orders to omit their legacy Stripe intent.
+
+## Stock in the Sandbox checkout
+
+On the first successful verification, save the payment reference and mark the order
+paid. If all items are still available, deduct their quantities in the same database
+transaction. If stock is insufficient, leave stock unchanged and still record the
+verified payment. An out-of-stock paid order may require manual handling. Stock
+reservation, expiry, and automated handling for that case are outside the current scope.
