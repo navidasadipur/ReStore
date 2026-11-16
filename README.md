@@ -65,8 +65,7 @@ policy. Requests carry the guest cookie and, when signed in, the Bearer token.
 
 ## Payment migration in progress
 
-Step 1 switches the demo catalog to rial storage and toman display. New Stripe payments
-are disabled while ZarinPal is implemented. **API startup applies a catalog repricing
+The demo catalog uses rial storage and toman display. Checkout uses the ZarinPal Sandbox. **API startup applies a catalog repricing
 migration**; review [the migration decisions and upgrade notes](docs/zarinpal-migration-plan.md)
 before running against an existing database. Existing demo orders are repriced to rials using the same sample pricing rule as the catalog.
 
@@ -84,16 +83,14 @@ before running against an existing database. Existing demo orders are repriced t
 | `Redis__Enabled`, `Redis__Configuration` | Optional Redis adapter, after explicitly switching its registration |
 | `RabbitMq__Enabled`, `RabbitMq__Host` | Optional RabbitMQ adapter, after explicitly switching its registration |
 
-The browser's Stripe publishable key currently lives in
-`client/src/features/checkout/CheckoutWrapper.tsx`. Changing the API's
-`StripeSettings__PublishableKey` alone does not change that client constant.
-
 ZarinPal settings are validated before database initialization. The checked-in configuration
 uses Sandbox and a test UUID; startup logs only the selected mode. Invalid or missing
 settings fail startup without including their values in the error. Configure real merchant
 IDs through environment variables or development user secrets, not frontend code.
 See [step 2 configuration examples](docs/zarinpal-migration-plan.md#step-2-configuration).
-The Sandbox payment and callback routes are available in the API. The storefront will use them in step 7.
+Checkout returns to the storefront at /checkout/result, which calls the API to verify
+the payment. Set ZarinpalSettings__CallbackUrl to the storefront’s /checkout/result URL.
+See [the Sandbox test instructions](docs/zarinpal-migration-plan.md#step-7-storefront-checkout).
 
 ## API and errors
 

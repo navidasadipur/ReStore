@@ -117,6 +117,23 @@ const Account = {
     fetchAddress: (): Promise<ShippingAddress | null> => read(requests.get<Envelope<ShippingAddress>>('account/savedAddress'), unwrapNullable)
 };
 
+interface PendingCheckout {
+    checkoutRequestId: string;
+    shippingAddress: ShippingAddress;
+    saveAddress: boolean;
+}
+
+interface ZarinpalPaymentLink {
+    orderId: number;
+    paymentUrl: string;
+}
+
+interface ZarinpalPaymentResult {
+    orderId: number;
+    paid: boolean;
+    referenceId?: number | null;
+}
+
 const Orders = {
     list: (pageNumber = 1, pageSize = 25) => {
         const page = Math.max(1, pageNumber);
@@ -125,10 +142,16 @@ const Orders = {
         return read(requests.get<Envelope<Order[]>>('orders', params), envelope => unwrapPage(envelope, page, size), false);
     },
     fetch: (id: number): Promise<Order> => read(requests.get<Envelope<Order>>(`orders/${id}`), unwrapOne),
+    createPending: (checkout: PendingCheckout) => read(requests.post<Envelope<unknown>>('orders/pending', checkout), unwrapKey, false),
     create: (values: any): Promise<number> => read(requests.post<Envelope<unknown>>('orders', values), unwrapKey, false)
 };
 
 const Payments = {
+    startZarinpal: (orderId: number) =>
+        read(requests.post<Envelope<ZarinpalPaymentLink>>('payments/zarinpal/' + orderId, {}), unwrapOne, false),
+    verifyZarinpal: (authority: string, status: string) => read(
+        requests.get<Envelope<ZarinpalPaymentResult>>('payments/zarinpal/callback', new URLSearchParams({ authority, status })),
+        unwrapOne, false),
     createPaymentIntent: (): Promise<BasketModel> => read(requests.post<Envelope<BasketModel>>('payments', {}), unwrapOne, false)
 };
 
