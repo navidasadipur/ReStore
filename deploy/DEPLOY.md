@@ -28,7 +28,8 @@ Verified end to end: Let's Encrypt certificate issued for both names, SPA served
 
 ReStore is **one deployable unit**, not two apps. The React client is compiled to
 static files, those files go into the API's `wwwroot`, and the ASP.NET Core API
-serves them (`UseStaticFiles` + `MapFallbackToController` in `API/Program.cs`).
+serves them (`UseStaticFiles` + `MapFallbackToController` in
+`SourceApi/ReStore.Api/Program.cs`).
 So there is one image, one `app` service.
 
 ```
@@ -208,7 +209,7 @@ migration, restore the database dump too.
 |---|---|---|
 | `JavaScript heap out of memory` while building | React build on a 1 GB box | Build on a hosted runner (what we do now). If you ever build locally, `NODE_OPTIONS=--max-old-space-size=1024` is already set in the Dockerfile |
 | `apt-get install curl` fails with `404 Not Found` from `deb.debian.org/debian-security` | The .NET 7 image is Debian 11; that mirror's index and pool were out of sync | The Dockerfile no longer installs anything. The healthcheck uses bash's `/dev/tcp`, and `adduser` is already in the base image |
-| `COPY --from=client-build /client/build` fails | `client/.env.production` sets `BUILD_PATH=../API/wwwroot`, so create-react-app wrote outside `/client` | The Dockerfile sets `BUILD_PATH=build` as a real environment variable, which wins over the `.env` file |
+| `COPY --from=client-build /client/build` fails | `client/.env.production` sets `BUILD_PATH=../SourceApi/ReStore.Api/wwwroot`, so create-react-app wrote outside `/client` | The Dockerfile sets `BUILD_PATH=build` as a real environment variable, which wins over the `.env` file |
 | App starts but never creates tables | `MigrateAsync` failures are caught and logged, not fatal, so the app runs happily against an empty database | `depends_on: db: condition: service_healthy` - the DB is up before the app starts |
 | Deploying ReStore restarts `navid-website` | Running `docker compose up -d` with no service name in a shared project | Always name the service: `docker compose up -d app` / `up -d caddy` |
 | `docker compose` in `/opt/restore` complains a variable is missing | `.env` was not read, or is not readable by the user running compose | `.env` must be `600` and owned by `runner`; run compose as `runner` or `root` |
@@ -219,13 +220,15 @@ migration, restore the database dump too.
 
 These are real and should be handled before the site is advertised:
 
-1. **`API/appsettings.Development.json` is committed to git** with live Stripe
-   test keys and a Cloudinary API secret. It is excluded from the image via
-   `.dockerignore`, so it never reaches production - but it is in the repository
-   and in the git history. Rotate those keys and remove the file from tracking.
-2. **Seeded users.** `API/Data/DbInitializer.cs` creates `admin` and `bob` with
-   the password `Pa$$w0rd`, which is printed in the README. On a public URL that
-   is an open admin account. Change it before going live.
+1. **`SourceApi/ReStore.Api/appsettings.Development.json` is committed to git**
+   with live Stripe test keys and a Cloudinary API secret. It is excluded from
+   the image via `.dockerignore`, so it never reaches production - but it is in
+   the repository and in the git history. Rotate those keys and remove the file
+   from tracking.
+2. **Seeded users.** `SourceApi/ReStore.Infrastructure/Persistence/DbInitializer.cs`
+   creates `admin` and `bob` with the password `Pa$$w0rd`, which is printed in
+   the README. On a public URL that is an open admin account. Change it before
+   going live.
 3. **.NET 7 reached end of life in May 2024.** The images are pinned so nothing
    breaks today, but there are no security patches. Plan an upgrade to .NET 8.
 4. The Stripe webhook secret in `.env` is the *test* one. Register

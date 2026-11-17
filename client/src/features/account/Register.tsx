@@ -5,7 +5,9 @@ import Box from '@mui/material/Box';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
-import { Paper } from '@mui/material';
+import { Alert, Paper } from '@mui/material';
+import { useState } from 'react';
+import { getFormErrors } from '../../app/api/contracts';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { LoadingButton } from '@mui/lab';
@@ -15,23 +17,16 @@ import { toast } from 'react-toastify';
 
 export default function Register() {
     const navigate = useNavigate();
+    const [serverError, setServerError] = useState('');
 
     const { register, handleSubmit, setError, formState: { isSubmitting, errors, isValid } } = useForm({
         mode: 'all'
     });
 
-    function handleApiErrors(errors: any) {
-       if (errors){
-            errors.forEach((error: any) => {
-                if (error.includes('Password')) {
-                    setError('password', {message: error})
-                } else if (error.includes('Email')) {
-                    setError('email', {message: error})
-                } else if (error.includes('Username')) {
-                    setError('username', {message: error})
-                }
-            });
-       }
+    function handleApiErrors(error: unknown) {
+        const failure = getFormErrors(error, ['username', 'email', 'password']);
+        Object.entries(failure.fieldErrors).forEach(([field, message]) => setError(field, { type: 'server', message }));
+        setServerError(failure.message);
     }
 
     return (
@@ -44,16 +39,19 @@ export default function Register() {
                 Register
             </Typography>
             <Box component="form"
-                onSubmit={handleSubmit((data) =>
-                    agent.Account.register(data)
+                onSubmit={handleSubmit((data) => {
+                    setServerError('');
+                    return agent.Account.register(data)
                         .then(() => {
                             toast.success('Registration successful - you can now login');
                             navigate('/login');
                         })
-                        .catch(error => handleApiErrors(error)))
+                        .catch(error => handleApiErrors(error));
+                    })
                 }
                 noValidate sx={{ mt: 1 }}
             >
+                {serverError && <Alert severity="error">{serverError}</Alert>}
                 <TextField
                     margin="normal"
                     fullWidth

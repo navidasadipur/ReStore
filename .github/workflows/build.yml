@@ -50,7 +50,10 @@ jobs:
             9.0.x
 
       - name: Build .NET 9 API
-        run: dotnet build API/API.csproj --configuration Release
+        run: dotnet build SourceApi/ReStore.Api/ReStore.Api.csproj --configuration Release
+
+      - name: Test API kernel
+        run: dotnet test Test/ReStore.Test/ReStore.Test.csproj --configuration Release
 
       - name: Test deployment agent
         run: dotnet test tools/ReStore.Deploy.Tests/ReStore.Deploy.Tests.csproj --configuration Release

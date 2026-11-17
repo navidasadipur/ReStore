@@ -3,6 +3,14 @@ export function getCookie(key: string) {
     return b ? b.pop() : "";
 }
 
-export function currencyFormat(amount: number){
-    return '$' + (amount / 100).toFixed(2);
+// All API amounts are rials; the storefront displays tomans.
+export const deliveryFeeInRials = 500_000;
+export const freeDeliveryThresholdInRials = 10_000_000;
+
+export function getDeliveryFee(subtotal: number) {
+    return subtotal > freeDeliveryThresholdInRials ? 0 : deliveryFeeInRials;
+}
+
+export function currencyFormat(amount: number) {
+    return new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 }).format(amount / 10) + ' تومان';
 }

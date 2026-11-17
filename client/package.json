@@ -10,8 +10,6 @@
     "@mui/lab": "^5.0.0-alpha.120",
     "@mui/material": "^5.11.8",
     "@reduxjs/toolkit": "^1.9.3",
-    "@stripe/react-stripe-js": "^2.1.0",
-    "@stripe/stripe-js": "^1.52.1",
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
@@ -43,6 +41,11 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "^axios$": "<rootDir>/node_modules/axios/dist/node/axios.cjs"
+    }
   },
   "eslintConfig": {
     "extends": [

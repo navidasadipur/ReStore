@@ -1,4 +1,4 @@
-import { Grid, Paper } from "@mui/material";
+import { Alert, Button, Grid, Paper } from "@mui/material";
 import CheckboxButtons from "../../app/components/CheckboxButtons";
 import RadioButtonGroup from "../../app/components/RadioButtonGroup";
 import LoadingComponent from "../../app/layout/LoadingComponent";
@@ -19,10 +19,11 @@ const sortOptions = [
 ];
 
 export default function Catalog() {
-  const {products, brands, types, filtersLoaded, metaData} = useProducts();
+  const {products, brands, types, filtersLoaded, metaData, error, retry} = useProducts();
   const { productParams } = useAppSelector((state) => state.catalog);
   const dispatch = useAppDispatch();
 
+  if (error) return <Alert severity="error" action={<Button onClick={retry}>Retry</Button>}>{error}</Alert>;
   if (!filtersLoaded) return <LoadingComponent message={"Loading Products ..."} />;
 
   return (

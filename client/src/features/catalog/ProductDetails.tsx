@@ -18,6 +18,8 @@ import { useAppDispatch, useAppSelector } from "../../app/store/configureStore";
 import { addBasketItemAsync, removeBasketItemAsync } from "../basket/basketSlice";
 import { fetchProductAsync, productSelectors } from "./catalogSlice";
 
+import { currencyFormat } from "../../app/util/util";
+
 export default function ProductDetails() {
   const { basket, status} = useAppSelector(state => state.basket);
   const dispatch = useAppDispatch();
@@ -33,8 +35,12 @@ export default function ProductDetails() {
 
   useEffect(() => {
     if(item) setQuantity(item.quantity);
-    if(!product) dispatch(fetchProductAsync(parseInt(id!)));
-  }, [id, item]);
+  }, [item]);
+
+  const needsDetails = !product || product.description === undefined;
+  useEffect(() => {
+    if (needsDetails) dispatch(fetchProductAsync(parseInt(id!)));
+  }, [id, needsDetails, dispatch]);
 
   function handleInputChange(event: any){
     if (event.target.value >= 0){
@@ -69,7 +75,7 @@ export default function ProductDetails() {
         <Typography variant="h3">{product.name}</Typography>
         <Divider sx={{ mb: 2 }} />
         <Typography variant="h4" color="secondary">
-          ${(product.price / 100).toFixed(2)}
+          {currencyFormat(product.price)}
         </Typography>
         <TableContainer>
           <Table>

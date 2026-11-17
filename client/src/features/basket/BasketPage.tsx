@@ -12,7 +12,7 @@ import BasketTable from "./BasketTable";
 export default function BasketPage() {
   const { basket } = useAppSelector(state => state.basket);
 
-  if (!basket)
+  if (!basket || basket.items.length === 0)
     return <Typography variant="h3">Your basket is empty</Typography>;
 
   return (

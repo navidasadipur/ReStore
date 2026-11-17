@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <!-- FluentAssertions 8.x is licensed under Xceed's community licence: free for
+         non-commercial use. Drop to 6.2.0 (Apache-2.0) if that ever becomes a problem. -->
+    <PackageReference Include="FluentAssertions" Version="8.9.0" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.21" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SourceApi\ReStore.Application\ReStore.Application.csproj" />
+    <ProjectReference Include="..\..\SourceApi\ReStore.Infrastructure\ReStore.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\SourceApi\ReStore.Api\ReStore.Api.csproj" />
+  </ItemGroup>
+
+</Project>

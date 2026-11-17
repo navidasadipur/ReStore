@@ -1,134 +1,165 @@
-import axios, { AxiosError, AxiosResponse } from "axios";
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import { toast } from 'react-toastify';
-import { PaginatedResponse } from "../models/pagination";
-import { store } from "../store/configureStore";
-import { router } from "../router/Routes";
+import { store } from '../store/configureStore';
+import { router } from '../router/Routes';
+import { Basket as BasketModel } from '../models/basket';
+import { Order, ShippingAddress } from '../models/order';
+import { Product } from '../models/product';
+import { UserSession } from '../models/user';
+import { ApiError, Envelope, getErrorMessages, toApiErrorData, unwrapKey, unwrapNothing, unwrapNullable, unwrapOne, unwrapPage } from './contracts';
 
-const sleep = () => new Promise(resolve => setTimeout(resolve, 500))
-
-axios.defaults.baseURL = process.env.REACT_APP_API_URL;
+axios.defaults.baseURL = process.env.REACT_APP_API_URL ?? '/api/';
 axios.defaults.withCredentials = true;
-
-const responseBody = (response: AxiosResponse) => response.data;
+const responseBody = <T>(response: AxiosResponse<T>) => response.data;
 
 axios.interceptors.request.use(config => {
     const token = store.getState().account.user?.token;
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
-})
+});
 
-axios.interceptors.response.use(async response => {
-    if (process.env.NODE_ENV === 'development') await sleep();
-    const pagination = response.headers['pagination'];
-    if (pagination){
-        response.data = new PaginatedResponse(response.data, JSON.parse(pagination));
-        return response;
+axios.interceptors.response.use(response => response, (error: AxiosError<any>) => {
+    // BuggyController, authentication and HTTP protocol failures still use status codes.
+    if (!error.response) {
+        const failure = new ApiError({ message: 'Unable to reach the server. Please try again.', errors: {} });
+        toast.error(failure.message);
+        return Promise.reject(failure);
     }
-    return response;
-}, (error: AxiosError) => {
-    const {status} = error.response!;
-    const {data}: any = error.response!;
+    const { status, data } = error.response;
+    const failure = new ApiError(toApiErrorData({ data, status }));
     switch (status) {
         case 400:
-            if (data.errors) {
-                const modelStateErrors: string[] = [];
-                for (const key in data.errors) {
-                    if (data.errors[key]) {
-                        modelStateErrors.push(data.errors[key])
-                    }
-                }
-                throw modelStateErrors.flat();
-            }
-            toast.error(data.title);
+            if (!data?.errors) toast.error(data?.title ?? failure.message);
             break;
         case 401:
-            toast.error(data.title);
+            toast.error(data?.title ?? 'Please sign in to continue.');
             break;
         case 403:
             toast.error('You are not allowed to do that!');
             break;
         case 500:
-            router.navigate('/server-error', {state: {error: data}});
+            router.navigate('/server-error', { state: { error: data } });
             break;
         default:
             break;
     }
-    return Promise.reject(error.response)
-})
+    return Promise.reject(failure);
+});
 
-const requests = {
-    get: (url: string, params?: URLSearchParams) => axios.get(url, {params}).then(responseBody),
-    post: (url: string, body: {}) => axios.post(url, body).then(responseBody),
-    put: (url: string, body: {}) => axios.put(url, body).then(responseBody),
-    delete: (url: string) => axios.delete(url).then(responseBody),
-    postForm: (url: string, data: FormData) => axios.post(url, data, {
-        headers: {'Content-Type': 'multipart/form-data'}
-    }).then(responseBody),
-    putForm: (url: string, data: FormData) => axios.put(url, data, {
-        headers: {'Content-Type': 'multipart/form-data'}
-    }).then(responseBody)
+async function read<T, R>(request: Promise<Envelope<T>>, unwrap: (envelope: Envelope<T>) => R, notify = true): Promise<R> {
+    // Only envelope failures are handled here; HTTP errors were already handled above.
+    const envelope = await request;
+    try { return unwrap(envelope); }
+    catch (error) {
+        if (notify) toast.error(getErrorMessages(error).join('\n'));
+        throw error;
+    }
 }
 
-function createFormData(item: any) {
-    let formData = new FormData()
-    for (const key in item) {
-        formData.append(key, item[key])
+const requests = {
+    get: <T>(url: string, params?: URLSearchParams) => axios.get<T>(url, { params }).then(responseBody),
+    post: <T>(url: string, body: {}) => axios.post<T>(url, body).then(responseBody),
+    put: <T>(url: string, body: {}) => axios.put<T>(url, body).then(responseBody),
+    delete: <T>(url: string) => axios.delete<T>(url).then(responseBody),
+    postForm: <T>(url: string, data: FormData) => axios.post<T>(url, data).then(responseBody),
+    putForm: <T>(url: string, data: FormData) => axios.put<T>(url, data).then(responseBody)
+};
+
+export function createFormData(item: Record<string, any>) {
+    const formData = new FormData();
+    for (const [key, value] of Object.entries(item)) {
+        if (value === null || value === undefined) continue;
+        if (key === 'file' && !(value instanceof Blob)) continue;
+        formData.append(key, value instanceof Blob ? value : String(value));
     }
     return formData;
 }
 
+const Catalog = {
+    list: (params: URLSearchParams) => {
+        const pageNumber = Math.max(1, Number(params.get('pageNumber')) || 1);
+        const requestedSize = Number(params.get('pageSize')) || 6;
+        const pageSize = requestedSize > 0 ? Math.min(50, requestedSize) : 6;
+        const query = new URLSearchParams(params);
+        query.set('pageNumber', String(pageNumber));
+        query.set('pageSize', String(pageSize));
+        return read(requests.get<Envelope<Product[]>>('products', query), envelope => unwrapPage(envelope, pageNumber, pageSize));
+    },
+    details: (id: number): Promise<Product> => read(requests.get<Envelope<Product>>(`products/${id}`), unwrapOne),
+    fetchFilters: (): Promise<{ brands: string[], types: string[] }> =>
+        read(requests.get<Envelope<{ brands: string[], types: string[] }>>('products/filters'), unwrapOne)
+};
+
 const Admin = {
-    createProduct: (product: any) => requests.postForm('products', createFormData(product)),
-    updateProduct: (product: any) => requests.putForm('products', createFormData(product)),
-    deleteProduct: (id: number) => requests.delete(`products/${id}`)
+    createProduct: async (product: any): Promise<Product> => {
+        const id = await read(requests.postForm<Envelope<unknown>>('products', createFormData(product)), unwrapKey, false);
+        return Catalog.details(id);
+    },
+    updateProduct: async (product: any): Promise<Product> => {
+        await read(requests.putForm<Envelope<unknown>>('products', createFormData(product)), unwrapNothing, false);
+        return Catalog.details(product.id);
+    },
+    deleteProduct: (id: number) => read(requests.delete<Envelope<unknown>>(`products/${id}`), unwrapNothing)
+};
+
+const Basket = {
+    get: (): Promise<BasketModel | null> => read(requests.get<Envelope<BasketModel>>('basket'), unwrapNullable),
+    addItem: (productId: number, quantity = 1): Promise<BasketModel> =>
+        read(requests.post<Envelope<BasketModel>>(`basket?productId=${productId}&quantity=${quantity}`, {}), unwrapOne),
+    removeItem: (productId: number, quantity = 1): Promise<BasketModel | null> =>
+        read(requests.delete<Envelope<BasketModel>>(`basket?productId=${productId}&quantity=${quantity}`), unwrapNullable)
+};
+
+const Account = {
+    login: (values: any): Promise<UserSession> => read(requests.post<Envelope<UserSession>>('account/login', values), unwrapOne, false),
+    register: (values: any): Promise<number> => read(requests.post<Envelope<unknown>>('account/register', values), unwrapKey, false),
+    currentUser: (): Promise<UserSession> => read(requests.get<Envelope<UserSession>>('account/currentUser'), unwrapOne, false),
+    fetchAddress: (): Promise<ShippingAddress | null> => read(requests.get<Envelope<ShippingAddress>>('account/savedAddress'), unwrapNullable)
+};
+
+interface PendingCheckout {
+    checkoutRequestId: string;
+    shippingAddress: ShippingAddress;
+    saveAddress: boolean;
 }
 
-const Catalog = {
-    list: (params: URLSearchParams) => requests.get('products', params),
-    details: (id : number) => requests.get(`products/${id}`),
-    fetchFilters: () => requests.get('products/filters')
+interface ZarinpalPaymentLink {
+    orderId: number;
+    paymentUrl: string;
 }
+
+interface ZarinpalPaymentResult {
+    orderId: number;
+    paid: boolean;
+    referenceId?: number | null;
+}
+
+const Orders = {
+    list: (pageNumber = 1, pageSize = 25) => {
+        const page = Math.max(1, pageNumber);
+        const size = pageSize > 0 ? Math.min(200, pageSize) : 25;
+        const params = new URLSearchParams({ 'PagingInfo.PageNumber': String(page), 'PagingInfo.PageRecordCount': String(size) });
+        return read(requests.get<Envelope<Order[]>>('orders', params), envelope => unwrapPage(envelope, page, size), false);
+    },
+    fetch: (id: number): Promise<Order> => read(requests.get<Envelope<Order>>(`orders/${id}`), unwrapOne),
+    createPending: (checkout: PendingCheckout) => read(requests.post<Envelope<unknown>>('orders/pending', checkout), unwrapKey, false)
+};
+
+const Payments = {
+    startZarinpal: (orderId: number) =>
+        read(requests.post<Envelope<ZarinpalPaymentLink>>('payments/zarinpal/' + orderId, {}), unwrapOne, false),
+    verifyZarinpal: (authority: string, status: string) => read(
+        requests.get<Envelope<ZarinpalPaymentResult>>('payments/zarinpal/callback', new URLSearchParams({ authority, status })),
+        unwrapOne, false)
+};
 
 const TestErrors = {
     get400Error: () => requests.get('buggy/bad-request'),
     get401Error: () => requests.get('buggy/unauthorized'),
     get404Error: () => requests.get('buggy/not-found'),
     get500Error: () => requests.get('buggy/server-error'),
-    getValidationError: () => requests.get('buggy/validation-error'),
-}
+    getValidationError: () => requests.get('buggy/validation-error')
+};
 
-const Basket = {
-    get: () => requests.get('basket'),
-    addItem: (productId: number, quantity = 1) => requests.post(`basket?productId=${productId}&quantity=${quantity}`, {}),
-    removeItem: (productId: number, quantity = 1) => requests.delete(`basket?productId=${productId}&quantity=${quantity}`),
-
-}
-
-const Account = {
-    login: (values: any) => requests.post('account/login', values),
-    register: (values: any) => requests.post('account/register', values),
-    currentUser: () => requests.get('account/currentUser'),
-    fetchAddress: () => requests.get('account/savedAddress')
-}
-
-const Orders = {
-    list: () => requests.get('orders'),
-    fetch: (id: number) => requests.get(`orders/${id}`),
-    create: (values: any) => requests.post('orders', values)
-}
-
-const Payments = {
-    createPaymentIntent: () => requests.post('payments', {})
-}
-
-const agent = {
-    Catalog,
-    TestErrors,
-    Basket,
-    Account,
-    Orders,
-    Payments,
-    Admin
-}
-
+const agent = { Catalog, Admin, Basket, Account, Orders, Payments, TestErrors };
 export default agent;
