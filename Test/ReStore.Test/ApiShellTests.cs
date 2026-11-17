@@ -25,7 +25,7 @@ namespace ReStore.Test;
 
 public sealed class ApiShellHost : IAsyncLifetime
 {
-    private const string TokenKey = "restore-api-shell-tests-0123456789-abcdefghijklmnopqrstuvwxyz-0123456789";
+    internal const string TokenKey = "restore-api-shell-tests-0123456789-abcdefghijklmnopqrstuvwxyz-0123456789";
     private WebApplication _app = null!;
     public HttpClient Client { get; private set; } = null!;
 
@@ -51,13 +51,6 @@ public sealed class ApiShellHost : IAsyncLifetime
         var mediator = new Mock<IMediator>();
         mediator.Setup(m => m.Send(It.IsAny<ProductListQuery>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Private database diagnostic"));
-        mediator.Setup(m => m.Send(It.IsAny<ProcessPaymentWebhookCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProcessPaymentWebhookCommand command, CancellationToken _) => command.Payload switch
-            {
-                "ack" => new UpdateReturn(),
-                "invalid" => new UpdateReturn(("Invalid signature", "InvalidWebhook")),
-                _ => new UpdateReturn(("Storage failure", "StorageFailure"))
-            });
         builder.Services.AddSingleton(mediator.Object);
 
         _app = builder.Build();
@@ -139,19 +132,6 @@ public class ApiShellTests(ApiShellHost host) : IClassFixture<ApiShellHost>
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiShellHost.MemberToken());
         request.Content = new MultipartFormDataContent();
         (await host.Client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Theory]
-    [InlineData("ack", 200)]
-    [InlineData("invalid", 400)]
-    [InlineData("retry", 500)]
-    public async Task Webhook_responses_keep_the_provider_protocol(string payload, int status)
-    {
-        var response = await host.Client.PostAsync("/api/payments/webhook", new StringContent(payload));
-        ((int)response.StatusCode).Should().Be(status);
-        var body = await response.Content.ReadAsStringAsync();
-        if (status == 200) body.Should().BeEmpty();
-        body.Should().NotContain("\"succeeded\"");
     }
 
     [Theory]

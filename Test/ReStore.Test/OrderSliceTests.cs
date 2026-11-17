@@ -26,11 +26,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     private OrderRepository Writes(StoreContext? context = null)
         => new(context ?? _store.Context, new OrderControls(Reads(context)));
 
-    private CreateOrderCommandHandler Create(string buyer, StoreContext? context = null)
+    private CreatePendingOrderCommandHandler CreatePending(string buyer, StoreContext? context = null)
         => new(Writes(context), new FakeBuyerIdentity().AsAuthenticated(buyer), new NoopAppLogger());
-
-    private CreatePendingOrderCommandHandler CreatePending(string buyer)
-        => new(Writes(), new FakeBuyerIdentity().AsAuthenticated(buyer), new NoopAppLogger());
 
     private OrderListQueryHandler List(string buyer)
         => new(Reads(), _store.Mapper, new NoopAppLogger(), new FakeBuyerIdentity().AsAuthenticated(buyer));
@@ -110,8 +107,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         PaymentAttemptStatus status, bool reuseAuthority, long amountInRials)
     {
         var seed = await SeedBasket();
-        var order = await Create(seed.Buyer).Handle(
-            new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var order = await CreatePending(seed.Buyer).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
         order.Succeeded.Should().BeTrue(order.Error);
         var context = _store.Context;
         var firstAuthority = Guid.NewGuid().ToString("D");
@@ -149,18 +146,18 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     [Theory]
     [InlineData(5_000_000, 500_000)]
     [InlineData(5_000_001, 0)]
-    public async Task Checkout_persists_snapshot_stock_and_basket_removal(long price, long deliveryFee)
+    public async Task Checkout_persists_snapshot_and_leaves_stock_and_basket(long price, long deliveryFee)
     {
         var seed = await SeedBasket(price);
-        var result = await Create(seed.Buyer).Handle(
-            new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var result = await CreatePending(seed.Buyer).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
 
         result.Result.Should().Be(ReturnResult.Success, result.Error);
         result.Key.Should().BeGreaterThan(0);
         var saved = await _store.Context.Orders.AsNoTracking().Include(o => o.OrderItems)
             .SingleAsync(o => o.OrderId == result.Key);
         saved.BuyerId.Should().Be(seed.Buyer);
-        saved.PaymentIntentId.Should().Be("pi-checkout");
+        saved.PaymentIntentId.Should().BeNull();
         saved.SubTotal.Should().Be(price * 2);
         saved.DeliveryFee.Should().Be(deliveryFee);
         saved.OrderDate.Kind.Should().Be(DateTimeKind.Unspecified, "SQLite does not preserve DateTime.Kind");
@@ -168,12 +165,12 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         saved.OrderItems[0].Price.Should().Be(price);
         saved.OrderItems[0].ItemOrdered.Name.Should().Be("Ordered shoe");
         (await _store.Context.Products.AsNoTracking().SingleAsync(p => p.ProductId == seed.ProductId))
-            .QuantityInStock.Should().Be(8);
-        (await _store.Context.Baskets.AnyAsync(b => b.BuyerId == seed.Buyer)).Should().BeFalse();
+            .QuantityInStock.Should().Be(10);
+        (await _store.Context.Baskets.AnyAsync(b => b.BuyerId == seed.Buyer)).Should().BeTrue();
 
-        var repeated = await Create(seed.Buyer).Handle(
-            new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
-        repeated.Succeeded.Should().BeFalse();
+        var repeated = await CreatePending(seed.Buyer).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = saved.CheckoutRequestId!.Value, ShippingAddress = Address() }, CancellationToken.None);
+        repeated.Key.Should().Be(saved.OrderId);
         (await _store.Context.Orders.CountAsync(o => o.BuyerId == seed.Buyer)).Should().Be(1);
     }
 
@@ -195,8 +192,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         var oldAddressId = user.Address?.Id;
         _store.Context.ChangeTracker.Clear();
 
-        var result = await Create(seed.Buyer).Handle(
-            new CreateOrderCommand { SaveAddress = true, ShippingAddress = Address("Updated") }, CancellationToken.None);
+        var result = await CreatePending(seed.Buyer).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), SaveAddress = true, ShippingAddress = Address("Updated") }, CancellationToken.None);
 
         result.Succeeded.Should().BeTrue(result.Error);
         var saved = await _store.Context.Users.AsNoTracking().Include(u => u.Address).SingleAsync(u => u.UserName == seed.Buyer);
@@ -218,7 +215,7 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
             _store.Context.ChangeTracker.Clear();
         }
 
-        var result = await Create(buyer).Handle(new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var result = await CreatePending(buyer).Handle(new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
         result.Succeeded.Should().BeFalse();
         result.Error.Should().Contain("empty");
         (await _store.Context.Orders.AnyAsync(o => o.BuyerId == buyer)).Should().BeFalse();
@@ -235,7 +232,7 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         await _store.Context.SaveChangesAsync();
         _store.Context.ChangeTracker.Clear();
 
-        var result = await Create(seed.Buyer).Handle(new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var result = await CreatePending(seed.Buyer).Handle(new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
 
         result.Succeeded.Should().BeFalse();
         result.Error.Should().Contain("stock");
@@ -248,7 +245,7 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     public async Task Missing_shipping_address_does_not_consume_stock_or_basket()
     {
         var seed = await SeedBasket();
-        var result = await Create(seed.Buyer).Handle(new CreateOrderCommand(), CancellationToken.None);
+        var result = await CreatePending(seed.Buyer).Handle(new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid() }, CancellationToken.None);
         result.Succeeded.Should().BeFalse();
         result.Error.Should().Contain("Shipping address");
         (await _store.Context.Baskets.AnyAsync(b => b.BuyerId == seed.Buyer)).Should().BeTrue();
@@ -267,8 +264,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
             .AddInterceptors(new FailAfterSave()).Options;
         await using var failingContext = new StoreContext(options);
 
-        var result = await Create(seed.Buyer, failingContext).Handle(
-            new CreateOrderCommand { SaveAddress = true, ShippingAddress = Address() }, CancellationToken.None);
+        var result = await CreatePending(seed.Buyer, failingContext).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), SaveAddress = true, ShippingAddress = Address() }, CancellationToken.None);
 
         result.Succeeded.Should().BeFalse();
         result.Error.Should().Contain("Checkout failure after save");
@@ -290,8 +287,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
     {
         var first = await SeedBasket();
         var second = await SeedBasket();
-        var created = await Create(first.Buyer).Handle(new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
-        await Create(second.Buyer).Handle(new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var created = await CreatePending(first.Buyer).Handle(new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
+        await CreatePending(second.Buyer).Handle(new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
 
         // A product edit after checkout must not alter the order snapshot.
         var product = await _store.Context.Products.SingleAsync(p => p.ProductId == first.ProductId);
@@ -328,8 +325,8 @@ public class OrderSliceTests : IClassFixture<SqliteStore>
         var seed = await SeedBasket();
         var buyer = new FakeBuyerIdentity { BuyerId = seed.Buyer };
         var logger = new NoopAppLogger();
-        var create = await new CreateOrderCommandHandler(Writes(), buyer, logger).Handle(
-            new CreateOrderCommand { ShippingAddress = Address() }, CancellationToken.None);
+        var create = await new CreatePendingOrderCommandHandler(Writes(), buyer, logger).Handle(
+            new CreatePendingOrderCommand { CheckoutRequestId = Guid.NewGuid(), ShippingAddress = Address() }, CancellationToken.None);
         var list = await new OrderListQueryHandler(Reads(), _store.Mapper, logger, buyer)
             .Handle(new OrderListQuery(), CancellationToken.None);
         var detail = await new OrderDetailQueryHandler(Reads(), _store.Mapper, logger, buyer)

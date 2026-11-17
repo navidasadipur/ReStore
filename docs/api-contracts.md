@@ -10,8 +10,7 @@ Swagger is served at `/swagger/v1/swagger.json`.
 Product price inputs/outputs and basket prices are integer IRR (rials). The UI displays
 tomans (IRR / 10). All orders, including existing demo orders after migration, use rials.
 Order totals include the saved delivery fee.
-New Stripe payment requests return a failed business envelope while ZarinPal is being
-implemented. See [the migration plan](zarinpal-migration-plan.md).
+See [the migration plan](zarinpal-migration-plan.md).
 
 ## Envelopes and HTTP statuses
 
@@ -69,7 +68,7 @@ validation errors use messages plus comma-separated Identity codes, not necessar
 a field dictionary.
 
 The policy does not convert authentication challenges/forbids, native protocol
-responses, the intentional Buggy demonstrations or Stripe webhook acknowledgements.
+responses, the intentional Buggy demonstrations.
 A caller must handle those HTTP errors as well as `succeeded:false`.
 
 ## Route reference
@@ -94,9 +93,9 @@ the Admin role. `Public` may still use the authenticated name or guest cookie.
 | GET `/account/savedAddress` | Bearer | None | `DtoReturnOne<UserAddressDto>` |
 | GET `/orders` | Bearer | Nested paging and query inputs below | `PaginatedResponseListDto<OrderDto>` |
 | GET `/orders/{id:int}` | Bearer | Route id | `DtoReturnOne<OrderDto>` |
-| POST `/orders` | Bearer | JSON saveAddress, shippingAddress | `InsertReturn` |
-| POST `/payments` | Bearer | No business input | `DtoReturnOne<BasketDto>` |
-| POST `/payments/webhook` | Signed provider payload | Exact raw body and Stripe-Signature | Empty acknowledgement; see below |
+| POST /orders/pending | Bearer | JSON checkoutRequestId, saveAddress, shippingAddress | InsertReturn |
+| POST /payments/zarinpal/{orderId} | Bearer | Route orderId | Payment link and order ID |
+| GET /payments/zarinpal/callback | Public | Query Authority and Status | Payment result with orderId, paid and referenceId |
 
 Paths in this table are relative to `/api`. The multipart product update route is
 `PUT /api/products`, not PUT to the detail URL.
@@ -160,8 +159,7 @@ DELETE /api/basket?productId=7&quantity=2
 
 Adding creates a guest ID/basket when necessary. Removing more than present clears
 the line; removing from a missing basket does not create a row. Mutation results
-carry the authoritative basket. Its data contains `id`, `buyerId`, `items`,
-`paymentIntentId`, `clientSecret`; item data uses `productId` and product display
+carry the authoritative basket. Its data contains `id`, `buyerId` and `items`. Item data uses `productId` and product display
 fields plus quantity. Saved-address data includes id and the address fields below.
 
 ## Orders and paging
@@ -183,6 +181,7 @@ An order is created from the authenticated buyer's current basket:
 
 ```json
 {
+  "checkoutRequestId": "4a3fae99-333d-46ce-96fd-a744ae154601",
   "saveAddress": true,
   "shippingAddress": {
     "fullName": "Example Buyer",
@@ -196,36 +195,17 @@ An order is created from the authenticated buyer's current basket:
 }
 ```
 
-The response key is the order number. Stock decrement, order creation, basket
-removal and optional address save are one database transaction. OrderDto contains
-id, buyerId, shippingAddress, orderDate, orderItems, subTotal, deliveryFee, total and
-the status string (`Pending`, `PaymentReceived`, `PaymentFailed`). Item name/image/
-price are checkout snapshots. Delivery is 500 at subtotal <= 10000, otherwise 0.
+The order key can be reused by resubmitting the same checkoutRequestId as the same buyer.
+The order snapshots product and shipping details. Delivery is 500,000 rials up to
+10,000,000 rials in products. Delivery is free above that amount.
 
-## Webhook
+## ZarinPal payments
 
-POST `/api/payments` computes the amount from the authenticated basket, creates or
-updates the Stripe intent and returns the basket with its client secret. It does
-not confirm a card payment itself. The browser currently confirms through Stripe
-before submitting POST orders.
-
-POST `/api/payments/webhook` expects an exact raw provider payload and
-`Stripe-Signature` header. The adapter uses Stripe.net 41.15.0's ConstructEvent with
-API-version checking enabled (the SDK default is 2022-11-15). Verify webhook endpoint
-version compatibility during Stripe test-mode acceptance.
-
-| Condition | HTTP response |
-| --- | --- |
-| Verified unrelated object or pending charge | 200, empty body |
-| Verified terminal charge, no matching order | 200, empty body |
-| Matching order updated, or duplicate delivery | 200, empty body |
-| Invalid signature/payload rejected by the verifier | 400 |
-| Missing signing configuration or processing/database failure | 500, retryable |
-
-Succeeded/failed Charge states map to PaymentReceived/PaymentFailed. A late failure
-does not downgrade a paid order. Webhook responses are not browser envelopes. The
-[architecture limitations](architecture.md#payments-and-webhook) explain the gap
-when an event precedes order creation and the absence of durable reconciliation.
+Start payment for a pending order owned by the signed-in buyer. The API stores the
+Sandbox authority and returns the redirect URL in data.paymentUrl. The storefront
+return page calls the callback route. The API verifies the stored amount with
+ZarinPal and saves the result, reference and any stock deduction together.
+Repeat callbacks return the saved result.
 
 ## Intentional error demonstrations
 

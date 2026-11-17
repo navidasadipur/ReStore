@@ -32,7 +32,8 @@ test('login and current-user unwrap the session, and empty saved addresses remai
 test('registration and order creation return the inserted key', async () => {
     respond({ succeeded: true, key: 42 });
     expect(await agent.Account.register({})).toBe(42);
-    expect(await agent.Orders.create({})).toBe(42);
+    expect(await agent.Orders.createPending({ checkoutRequestId: "test", saveAddress: false,
+        shippingAddress: { fullName: "Alice", address1: "Street", address2: "", city: "City", state: "State", zip: "12345", country: "Country" } })).toBe(42);
 });
 
 test('failed HTTP 200 account responses reject for the form without a duplicate toast', async () => {
@@ -54,11 +55,10 @@ test('orders use nested paging parameters and expose the paginated list', async 
     expect(page.metaData.totalPages).toBe(2);
 });
 
-test('basket mutations and payment intent creation return the authoritative basket', async () => {
-    const basket = { id: 1, buyerId: 'Alice', items: [], paymentIntentId: 'pi-test', clientSecret: 'secret' };
+test('basket mutations return the authoritative basket', async () => {
+    const basket = { id: 1, buyerId: 'Alice', items: [] };
     respond({ succeeded: true, data: basket });
     expect(await agent.Basket.removeItem(7, 9)).toEqual(basket);
-    expect(await agent.Payments.createPaymentIntent()).toEqual(basket);
 });
 
 test('admin creation reads back the full product after receiving its key', async () => {

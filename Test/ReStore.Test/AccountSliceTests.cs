@@ -162,7 +162,6 @@ public sealed class AccountSliceTests : IDisposable
         result.Data!.Basket!.Id.Should().Be(basketId);
         result.Data.Basket.BuyerId.Should().Be("Alice");
         result.Data.Basket.Items.Should().ContainSingle().Which.Name.Should().Be("Guest item");
-        result.Data.Basket.PaymentIntentId.Should().Be("pi-guest");
         buyer.CookieCleared.Should().BeTrue();
         (await _store.Context.Baskets.CountAsync()).Should().Be(1);
         (await _store.Context.Baskets.SingleAsync()).BuyerId.Should().Be("Alice");

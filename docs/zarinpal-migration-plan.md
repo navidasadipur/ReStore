@@ -9,7 +9,7 @@
 5. Request a Sandbox payment for a saved order and persist Authority before returning the redirect URL — implemented.
 6. Verify the callback from the backend, record the reference and mark the order paid once — implemented.
 7. Replace the Stripe card form with a ZarinPal button and show the confirmed result — implemented. A full storefront purchase against the live Sandbox remains to be run.
-8. Remove unused Stripe integration, retain historical records, and configure production after onboarding.
+8. Retire the Stripe routes, packages and settings. Keep historical order records and validate checkout without Docker. Enable production after merchant onboarding and a complete Sandbox purchase.
 
 Each step should be reviewed separately, with its own commit and observable API or UI result.
 
@@ -187,3 +187,15 @@ Sign in, add an item to the basket, complete the address and select Pay with Zar
 Complete a test payment and confirm that the result shows the order and reference.
 Reload the result page and verify that stock was deducted only once. A cancelled
 payment shows an incomplete result. The API retains the basket in this Sandbox flow.
+
+## Step 8 cleanup and local tests
+
+The HTTP integration test runs in Visual Studio Test Explorer as
+ZarinpalCheckoutHttpTests. It uses an in-memory SQLite database and simulated
+ZarinPal responses. It exercises pending-order creation, payment-link creation,
+callback verification and callback replay through the API routes.
+
+For a live Sandbox checkout, run ReStore.Api from Visual Studio using the HTTP
+launch profile with a PostgreSQL demo connection, then run the React dev server.
+Use the callback value from step 7. Payment initiation and verification remain
+limited to Sandbox until production is enabled after onboarding.

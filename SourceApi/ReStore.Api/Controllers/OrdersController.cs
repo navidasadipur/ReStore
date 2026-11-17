@@ -27,9 +27,4 @@ public class OrdersController(IMediator mediator) : BaseApiController
     public async Task<InsertReturn> CreatePendingOrder(
         [FromBody] CreatePendingOrderCommand command, CancellationToken cancellationToken)
         => await mediator.Send(command, cancellationToken);
-
-    [HttpPost]
-    public async Task<InsertReturn> CreateOrder(
-        [FromBody] CreateOrderCommand command, CancellationToken cancellationToken)
-        => await mediator.Send(command, cancellationToken);
 }

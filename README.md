@@ -17,7 +17,7 @@ when creating the demo accounts. These are demo credentials, not a production ac
 | --- | --- |
 | `SourceApi/ReStore.Domain` | Entities, domain responses and repository contracts |
 | `SourceApi/ReStore.Application` | Commands, queries, handlers, Controls, DTOs and integration interfaces |
-| `SourceApi/ReStore.Infrastructure` | EF Core/PostgreSQL, Identity, Mapster, Stripe, Cloudinary and optional cache/bus adapters |
+| `SourceApi/ReStore.Infrastructure` | EF Core/PostgreSQL, Identity, Mapster, ZarinPal, Cloudinary and optional cache/bus adapters |
 | `SourceApi/ReStore.Api` | HTTP/MCP adapters, authentication, error policy and static hosting |
 | `Test/ReStore.Test` | Backend slice, persistence, migration and HTTP-shell tests |
 | `client` | React 18, TypeScript, Redux Toolkit, MUI, Axios, React Router and React Hook Form/Yup |
@@ -77,8 +77,7 @@ before running against an existing database. Existing demo orders are repriced t
 | `JWTSettings__TokenKey` | HS512 token signing and validation; use at least 64 bytes of signing material |
 | `ZarinpalSettings__Mode` | `Sandbox` (default) or `Production`; validated at startup |
 | `ZarinpalSettings__MerchantId` | Test UUID in Sandbox; merchant ID from the ZarinPal panel in Production |
-| `ZarinpalSettings__CallbackUrl` | Absolute backend callback URL; Production requires HTTPS and a non-loopback host |
-| `StripeSettings__WhSecret` | Verifying raw webhook payload signatures |
+| `ZarinpalSettings__CallbackUrl` | Absolute storefront return URL; Production requires HTTPS and a non-loopback host |
 | `Cloudinary__CloudName`, `Cloudinary__ApiKey`, `Cloudinary__ApiSecret` | Product image storage |
 | `Redis__Enabled`, `Redis__Configuration` | Optional Redis adapter, after explicitly switching its registration |
 | `RabbitMq__Enabled`, `RabbitMq__Host` | Optional RabbitMQ adapter, after explicitly switching its registration |
@@ -101,8 +100,7 @@ Business outcomes, including handled failures, use HTTP 200 envelopes. Branch on
 numeric enum for command envelopes.
 
 `EnvelopeResponseAttribute` also opts business routes into binding/validation and
-unhandled-exception envelopes. Authentication still uses 401/403, and Stripe
-webhooks keep their acknowledgement/retry protocol. The intentional
+unhandled-exception envelopes. Authentication uses 401/403. The intentional
 `/api/buggy/*` error demonstrations are retained for the frontend's error UI.
 
 | Health endpoint | Meaning |
@@ -153,10 +151,8 @@ isolated output is ignored `client/build`. Without the BUILD_PATH override,
 server or rebuild the client to see new frontend code. Docker rebuilds the client
 from source and serves it in the API container.
 
-Recorded implementation checks: 136 backend tests, 23 client tests, TypeScript and
-production build passed. Client tests use controlled HTTP/Stripe responses; these
-checks do not prove a live PostgreSQL/Stripe checkout or a deployment upgrade.
-See the [release verification list](docs/architecture.md#remaining-verification).
+The checkout integration test runs the HTTP API with SQLite and simulated ZarinPal responses.
+It can be run from Visual Studio Test Explorer by selecting ZarinpalCheckoutHttpTests.
 
 ## Deployment and project history
 

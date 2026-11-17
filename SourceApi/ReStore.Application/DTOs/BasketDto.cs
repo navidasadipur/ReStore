@@ -17,16 +17,12 @@ namespace ReStore.Application.DTOs
 
         public List<BasketItemDto> Items { get; set; } = new();
 
-        public string? PaymentIntentId { get; set; }
 
-        public string? ClientSecret { get; set; }
 
         public static BasketDto FromEntity(BasketEntity basket) => new()
         {
             Id = basket.BasketId,
             BuyerId = basket.BuyerId,
-            PaymentIntentId = basket.PaymentIntentId,
-            ClientSecret = basket.ClientSecret,
             Items = basket.Items
                 .Select(item => new BasketItemDto
                 {

@@ -56,8 +56,8 @@ HTTP binding or MCP arguments
 ```
 
 Controllers usually bind the command/query directly. Product create/update use
-multipart adapters to convert IFormFile to the command's Stream. The Stripe webhook
-reads the exact raw body because signature verification must precede interpretation.
+multipart adapters to convert IFormFile to the command’s Stream. The ZarinPal
+callback reads the authority and status from the query string.
 
 ## CQRS kernel
 
@@ -87,9 +87,8 @@ or separate read-replica DbContext.
 
 BaseControls loads the existing row and performs ControlAttribute validation;
 specific Controls own feature rules. ProductControls defines product rules,
-OrderControls checks checkout baskets/stock, and PaymentControls checks payment
-inputs and amount calculation. Identity retains UserManager's native validation
-pipeline instead of deriving User from BaseEntity.
+OrderControls checks checkout baskets and stock. ZarinPal uses the saved order total.
+Identity uses UserManager for user validation.
 
 EntityKeyResolver reads EF metadata. The renamed commerce keys are ProductId,
 BasketId, BasketItemId, OrderId and OrderItemId, with explicit Key attributes.
@@ -158,28 +157,13 @@ and cookie deletion follows success. Without a guest basket the account basket i
 retained. Token generation precedes transfer so a signing failure cannot consume
 the guest basket.
 
-### Payments and webhook
+### ZarinPal checkout
 
-IPaymentGateway isolates Stripe.net in Infrastructure. Payment amounts come from
-database product prices. Create/update requests carry deterministic idempotency
-keys based on basket, intent and amount; the adapter does not mutate the SDK's
-global API key.
-
-PaymentRepository updates only payment columns, guarded by basket ID, buyer and
-expected/current intent. Stripe and PostgreSQL do not share a transaction: a
-successful gateway call followed by a failed database write returns failure, and
-the same gateway operation can be retried with its key.
-
-The webhook adapter verifies the raw signature before interpreting Charge payloads.
-Terminal states update matching orders atomically; duplicates are no-ops and late
-failures do not downgrade PaymentReceived. Pending/unrelated events and events
-without an order are acknowledged. Storage failures remain retryable HTTP failures.
-See [webhook responses](api-contracts.md#webhook).
-
-The browser currently confirms payment before creating the order. A webhook may
-arrive before that order exists and be acknowledged without a persisted result.
-No durable reconciliation ledger/outbox was added. React's retry guard avoids
-reconfirming a payment in the mounted checkout, but does not survive a page refresh.
+Checkout first snapshots the buyer’s basket in a pending order. The buyer and checkout UUID identify retries.
+The ZarinPal service uses the saved rial total and persists the gateway authority before returning a redirect.
+The storefront submits the callback to the API, which verifies with ZarinPal and commits the payment result,
+order status and any stock deduction together. A repeat callback reads the stored result.
+Historical orders and their payment identifiers remain readable.
 
 ## HTTP response policy
 
@@ -188,16 +172,14 @@ actions. MVC uses it for binding/validation failures and ExceptionMiddleware use
 it for unhandled exceptions. It is not a response wrapper, authorization attribute
 or business validator; handlers already return their own envelopes.
 
-The attribute is absent from BaseApiController, BuggyController and the webhook.
-Consequently the deliberate frontend error demonstrations, authentication 401/403,
-webhook acknowledgements/retries and non-business HTTP protocols retain their
-statuses. Production unhandled exceptions are sanitized. This does not mean every
+The attribute is absent from BaseApiController, BuggyController and the health endpoints.
+The frontend error demonstrations and authentication failures retain their HTTP statuses. Production unhandled exceptions are sanitized. This does not mean every
 handler-provided error string is sanitized: some repository failures still carry
 provider wording in the failed envelope.
 
 ## Authorization boundaries
 
-HTTP product writes require Admin; Orders, current-user/address and payment-intent
+HTTP product writes require Admin; Orders, current-user/address and payment-link
 routes require authentication. Basket routes permit guests. Handler-level buyer
 guards also protect account/order/payment workflows.
 
@@ -226,8 +208,7 @@ event-consumer topology or durable outbox should be inferred from those seams al
 The recorded checks are 136 backend tests and 23 client tests, plus TypeScript and
 the production client/API builds. SQLite covers relational repository behaviour
 and rollback; HTTP-shell tests exercise MVC/auth/error policy with a controlled
-mediator. Client tests use controlled HTTP and Stripe results, including a failed
-order retry after mocked payment confirmation. Backend slice tests cover the real
+mediator. Client tests use controlled HTTP responses for payment-link retry and checkout results. Backend slice tests cover the real
 feature handlers independently.
 
 When adding a feature, place its contract and rules in Application, implement its
@@ -242,8 +223,7 @@ binding as well as handler behaviour when a wire contract changes.
   check schema/data preservation and startup/health behaviour.
 - Exercise simultaneous checkouts against PostgreSQL, including serializable
   conflicts and the absence of unintended retries or stock loss.
-- Run the complete browser login, catalog, cart, order and Stripe test-mode flow;
-  include payment-before-order timing, duplicate webhooks and failed persistence.
+- Run a complete browser purchase against the ZarinPal Sandbox using PostgreSQL.
 - Decide/enforce the MCP authorization policy for externally reachable mutation
   tools; do not rely on HTTP controller attributes to cover them.
 - Validate image upload/replacement/failure handling against configured storage.

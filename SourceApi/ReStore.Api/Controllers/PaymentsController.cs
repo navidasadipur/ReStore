@@ -12,12 +12,6 @@ public class PaymentsController(IMediator mediator) : BaseApiController
 {
     [Authorize]
     [EnvelopeResponse]
-    [HttpPost]
-    public async Task<DtoReturnOne<BasketDto>> CreateOrUpdatePaymentIntent(CancellationToken cancellationToken)
-        => await mediator.Send(new CreateOrUpdatePaymentIntentCommand(), cancellationToken);
-
-    [Authorize]
-    [EnvelopeResponse]
     [HttpPost("zarinpal/{orderId:int}")]
     public async Task<DtoReturnOne<ZarinpalPaymentLinkDto>> StartZarinpalPayment(int orderId,
         CancellationToken cancellationToken)
@@ -31,24 +25,5 @@ public class PaymentsController(IMediator mediator) : BaseApiController
     {
         Response.Headers.CacheControl = "no-store";
         return await mediator.Send(new VerifyZarinpalPaymentCommand(authority, status), cancellationToken);
-    }
-
-    [AllowAnonymous]
-    [HttpPost("webhook")]
-    public async Task<ActionResult> StripeWebhook(CancellationToken cancellationToken)
-    {
-        // Stripe signatures cover the raw body, so this endpoint cannot bind a JSON DTO.
-        var payload = await new StreamReader(Request.Body).ReadToEndAsync(cancellationToken);
-        var result = await mediator.Send(new ProcessPaymentWebhookCommand
-        {
-            Payload = payload,
-            Signature = Request.Headers["Stripe-Signature"].ToString()
-        }, cancellationToken);
-
-        if (result.Succeeded)
-            return new EmptyResult();
-        // Webhooks use provider acknowledgements: a storage failure must remain
-        // retryable instead of being acknowledged as an HTTP 200 envelope.
-        return result.ErrorCode == "InvalidWebhook" ? BadRequest() : StatusCode(StatusCodes.Status500InternalServerError);
     }
 }

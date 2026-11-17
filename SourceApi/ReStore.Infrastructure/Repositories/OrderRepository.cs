@@ -13,10 +13,6 @@ namespace ReStore.Infrastructure.Repositories;
 
 public sealed class OrderRepository(StoreContext context, OrderControls controls) : IOrderRepository
 {
-    public Task<DomainResponse> CreateFromBasketAsync(string buyerId, ShippingAddress? shippingAddress,
-        bool saveAddress, CancellationToken cancellationToken = default)
-        => CreateAsync(buyerId, shippingAddress, saveAddress, null, cancellationToken);
-
     public async Task<DomainResponse> CreatePendingFromBasketAsync(string buyerId, Guid checkoutRequestId,
         ShippingAddress? shippingAddress, bool saveAddress, CancellationToken cancellationToken = default)
     {
@@ -42,7 +38,7 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
     }
 
     private async Task<DomainResponse> CreateAsync(string buyerId, ShippingAddress? shippingAddress,
-        bool saveAddress, Guid? checkoutRequestId, CancellationToken cancellationToken)
+        bool saveAddress, Guid checkoutRequestId, CancellationToken cancellationToken)
     {
         try
         {
@@ -52,12 +48,9 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
             await using var transaction = await context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
 
-            if (checkoutRequestId is Guid requestId)
-            {
-                var existingId = await FindOrderIdAsync(buyerId, requestId, cancellationToken);
-                if (existingId.HasValue)
-                    return new DomainResponse(existingId.Value);
-            }
+            var existingId = await FindOrderIdAsync(buyerId, checkoutRequestId, cancellationToken);
+            if (existingId.HasValue)
+                return new DomainResponse(existingId.Value);
 
             var basket = await context.Baskets.Include(b => b.Items).ThenInclude(i => i.Product)
                 .SingleOrDefaultAsync(b => b.BuyerId == buyerId, cancellationToken);
@@ -65,9 +58,6 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
             var basketCheck = controls.CheckBasket(basket);
             if (!basketCheck.Result)
                 return basketCheck;
-
-            if (checkoutRequestId is null && string.IsNullOrWhiteSpace(basket!.PaymentIntentId))
-                return new DomainResponse("A Stripe payment intent is required for this checkout.");
 
             var items = basket!.Items.Select(item => new OrderItemEntity
             {
@@ -89,7 +79,6 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
                 OrderItems = items,
                 SubTotal = subtotal,
                 DeliveryFee = StoreMoney.GetDeliveryFee(subtotal),
-                PaymentIntentId = checkoutRequestId is null ? basket.PaymentIntentId : null,
                 CheckoutRequestId = checkoutRequestId
             };
 
@@ -108,13 +97,6 @@ public sealed class OrderRepository(StoreContext context, OrderControls controls
                 var address = user.Address ?? new UserAddress();
                 CopyAddress(order.ShippingAddress, address);
                 user.Address = address;
-            }
-
-            if (checkoutRequestId is null)
-            {
-                foreach (var item in basket.Items)
-                    item.Product.QuantityInStock -= item.Quantity;
-                context.Baskets.Remove(basket);
             }
 
             context.Orders.Add(order);

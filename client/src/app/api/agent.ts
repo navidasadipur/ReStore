@@ -142,8 +142,7 @@ const Orders = {
         return read(requests.get<Envelope<Order[]>>('orders', params), envelope => unwrapPage(envelope, page, size), false);
     },
     fetch: (id: number): Promise<Order> => read(requests.get<Envelope<Order>>(`orders/${id}`), unwrapOne),
-    createPending: (checkout: PendingCheckout) => read(requests.post<Envelope<unknown>>('orders/pending', checkout), unwrapKey, false),
-    create: (values: any): Promise<number> => read(requests.post<Envelope<unknown>>('orders', values), unwrapKey, false)
+    createPending: (checkout: PendingCheckout) => read(requests.post<Envelope<unknown>>('orders/pending', checkout), unwrapKey, false)
 };
 
 const Payments = {
@@ -151,8 +150,7 @@ const Payments = {
         read(requests.post<Envelope<ZarinpalPaymentLink>>('payments/zarinpal/' + orderId, {}), unwrapOne, false),
     verifyZarinpal: (authority: string, status: string) => read(
         requests.get<Envelope<ZarinpalPaymentResult>>('payments/zarinpal/callback', new URLSearchParams({ authority, status })),
-        unwrapOne, false),
-    createPaymentIntent: (): Promise<BasketModel> => read(requests.post<Envelope<BasketModel>>('payments', {}), unwrapOne, false)
+        unwrapOne, false)
 };
 
 const TestErrors = {
