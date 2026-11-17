@@ -8,8 +8,8 @@
 4. Persist pending orders before redirect and deduplicate checkout submission — implemented.
 5. Request a Sandbox payment for a saved order and persist Authority before returning the redirect URL — implemented.
 6. Verify the callback from the backend, record the reference and mark the order paid once — implemented.
-7. Replace the Stripe card form with a ZarinPal button and show the confirmed result — implemented. A full storefront purchase against the live Sandbox remains to be run.
-8. Retire the Stripe routes, packages and settings. Keep historical order records and validate checkout without Docker. Enable production after merchant onboarding and a complete Sandbox purchase.
+7. Replace the Stripe card form with a ZarinPal button and show the confirmed result — a complete browser purchase against the official Sandbox passed.
+8. Retire the Stripe routes, packages and settings, preserve historical order records and validate checkout without Docker — completed. Production activation awaits merchant onboarding.
 
 Each step should be reviewed separately, with its own commit and observable API or UI result.
 
@@ -199,3 +199,12 @@ For a live Sandbox checkout, run ReStore.Api from Visual Studio using the HTTP
 launch profile with a PostgreSQL demo connection, then run the React dev server.
 Use the callback value from step 7. Payment initiation and verification remain
 limited to Sandbox until production is enabled after onboarding.
+
+## Official Sandbox smoke test
+
+On 2026-11-17, a browser checkout for 1,500,000 rials completed against the official
+ZarinPal Sandbox. The local API used an isolated, in-memory SQLite database instead
+of Docker or PostgreSQL. The return page showed order #1 and test reference 5830301.
+Reloading the return page showed the same reference, and stock was 99 from an initial
+100 for the one-item basket. PostgreSQL migration and production payment verification
+remain separate release checks.
