@@ -11,11 +11,9 @@ name: Build and Push
 # The server then only pulls the finished image - see deploy/DEPLOY.md.
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-      - deploy/docker-cicd
+  pull_request:
+    branches: [main]
+    types: [closed]
   workflow_dispatch:
 
 env:
