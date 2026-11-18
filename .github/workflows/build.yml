@@ -11,11 +11,9 @@ name: Build and Push
 # The server then only pulls the finished image - see deploy/DEPLOY.md.
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-      - deploy/docker-cicd
+  pull_request:
+    branches: [main]
+    types: [closed]
   workflow_dispatch:
 
 env:
@@ -103,7 +101,7 @@ jobs:
           # Layer cache lives in GitHub Actions cache, so rebuilds only redo
           # the stages that actually changed.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.event_name == 'workflow_dispatch' && 'type=gha,mode=max' || '' }}
 
       # The Dockerfile compiles the React client and publishes the API. There
       # are currently no application test suites; the agent tests run above.
