@@ -1,111 +1,43 @@
-import { ShoppingCart } from "@mui/icons-material";
-import {
-  AppBar,
-  Badge,
-  Box,
-  IconButton,
-  List,
-  ListItem,
-  Switch,
-  Toolbar,
-  Typography,
-} from "@mui/material";
-import { Link, NavLink } from "react-router-dom";
-import { useAppSelector } from "../store/configureStore";
-import SignedInMenu from "./SignedInMenu";
+import { useLocation, useNavigate } from 'react-router-dom';
+import { signOut } from '../../features/account/accountSlice';
+import { catalogHref } from '../../features/catalog/catalogLocation';
+import useStorefrontLink from '../router/useStorefrontLink';
+import { useAppDispatch, useAppSelector } from '../store/configureStore';
+import StorefrontHeader from './StorefrontHeader';
 
 interface Props {
   isDarkMode: boolean;
   handleThemeChange: () => void;
 }
 
-const midLinks = [
-  { title: "catalog", path: "/catalog" },
-  { title: "about", path: "/about" },
-  { title: "contact", path: "/contact" },
-];
-
-const rightLinks = [
-  { title: "login", path: "/login" },
-  { title: "register", path: "/register" },
-];
-
-const navStyles = {
-  color: "inherit",
-  textDecoration: "none",
-  typography: "h6",
-  "&:hover": {
-    color: "grey.500",
-  },
-  "&.active": {
-    color: "text.secondary",
-  },
-};
-
 export default function Header({ isDarkMode, handleThemeChange }: Props) {
-  const { basket } = useAppSelector((state) => state.basket);
-  const { user } = useAppSelector((state) => state.account);
-
-  const itemCount = basket?.items.reduce((sum, item) => sum + item.quantity, 0);
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const onLinkClick = useStorefrontLink();
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(state => state.account.user);
+  const basket = useAppSelector(state => state.basket.basket);
+  const basketCount = basket?.items.reduce((count, item) => count + item.quantity, 0) ?? 0;
+  const searchValue = pathname === '/catalog' ? new URLSearchParams(search).get('q') ?? '' : '';
+  const links = [
+    { label: 'همه محصولات', href: '/catalog' },
+    { label: 'درباره ما', href: '/about' },
+    { label: 'تماس با ما', href: '/contact' },
+  ];
+  if (user?.roles?.includes('Admin')) links.push({ label: 'مدیریت محصولات', href: '/inventory' });
 
   return (
-    <AppBar position="static">
-      <Toolbar
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Box>
-          <Typography variant="h6" component={NavLink} to="/" sx={navStyles}>
-            RE-STORE
-          </Typography>
-          <Switch checked={isDarkMode} onChange={handleThemeChange} />
-        </Box>
-
-        <List sx={{ display: "flex" }}>
-          {midLinks.map(({ title, path }) => (
-            <ListItem component={NavLink} to={path} key={path} sx={navStyles}>
-              {title.toUpperCase()}
-            </ListItem>
-          ))}
-          {user && (
-            <ListItem component={NavLink} to={"/inventory"} sx={navStyles}>
-              INVENTORY
-            </ListItem>
-          )}
-        </List>
-
-        <Box sx={{ display: "flex", alignItems: "center" }}>
-          <IconButton
-            component={Link}
-            to="/basket"
-            size="large"
-            sx={{ color: "inherit" }}
-          >
-            <Badge badgeContent={itemCount} color="secondary">
-              <ShoppingCart />
-            </Badge>
-          </IconButton>
-          {user ? (
-            <SignedInMenu />
-          ) : (
-            <List sx={{ display: "flex" }}>
-              {rightLinks.map(({ title, path }) => (
-                <ListItem
-                  component={NavLink}
-                  to={path}
-                  key={path}
-                  sx={navStyles}
-                >
-                  {title.toUpperCase()}
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </Box>
-      </Toolbar>
-    </AppBar>
+    <StorefrontHeader
+      basketCount={basketCount}
+      accountEmail={user?.email}
+      links={links}
+      pathname={pathname}
+      searchValue={searchValue}
+      isDarkMode={isDarkMode}
+      onThemeChange={handleThemeChange}
+      onLinkClick={onLinkClick}
+      onSearch={query => navigate(catalogHref({ query }))}
+      onSignOut={() => { dispatch(signOut()); navigate('/'); }}
+    />
   );
 }

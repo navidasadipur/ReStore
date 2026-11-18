@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { toast } from 'react-toastify';
 import { store } from '../store/configureStore';
 import { router } from '../router/Routes';
@@ -11,6 +11,9 @@ import { ApiError, Envelope, getErrorMessages, toApiErrorData, unwrapKey, unwrap
 axios.defaults.baseURL = process.env.REACT_APP_API_URL ?? '/api/';
 axios.defaults.withCredentials = true;
 const responseBody = <T>(response: AxiosResponse<T>) => response.data;
+interface RequestOptions extends AxiosRequestConfig {
+    handleErrorInView?: boolean;
+}
 
 axios.interceptors.request.use(config => {
     const token = store.getState().account.user?.token;
@@ -19,6 +22,13 @@ axios.interceptors.request.use(config => {
 });
 
 axios.interceptors.response.use(response => response, (error: AxiosError<any>) => {
+    if ((error.config as RequestOptions | undefined)?.handleErrorInView) {
+        const response = error.response;
+        const failure = response
+            ? toApiErrorData({ data: response.data, status: response.status })
+            : { message: 'ارتباط با فروشگاه برقرار نشد.', errors: {} };
+        return Promise.reject(new ApiError(failure));
+    }
     // BuggyController, authentication and HTTP protocol failures still use status codes.
     if (!error.response) {
         const failure = new ApiError({ message: 'Unable to reach the server. Please try again.', errors: {} });
@@ -57,7 +67,10 @@ async function read<T, R>(request: Promise<Envelope<T>>, unwrap: (envelope: Enve
 }
 
 const requests = {
-    get: <T>(url: string, params?: URLSearchParams) => axios.get<T>(url, { params }).then(responseBody),
+    get: <T>(url: string, params?: URLSearchParams, handleErrorInView = false) => {
+        const options: RequestOptions = handleErrorInView ? { params, handleErrorInView } : { params };
+        return axios.get<T>(url, options).then(responseBody);
+    },
     post: <T>(url: string, body: {}) => axios.post<T>(url, body).then(responseBody),
     put: <T>(url: string, body: {}) => axios.put<T>(url, body).then(responseBody),
     delete: <T>(url: string) => axios.delete<T>(url).then(responseBody),
@@ -76,18 +89,20 @@ export function createFormData(item: Record<string, any>) {
 }
 
 const Catalog = {
-    list: (params: URLSearchParams) => {
+    list: (params: URLSearchParams, handleErrorInView = false) => {
         const pageNumber = Math.max(1, Number(params.get('pageNumber')) || 1);
         const requestedSize = Number(params.get('pageSize')) || 6;
         const pageSize = requestedSize > 0 ? Math.min(50, requestedSize) : 6;
         const query = new URLSearchParams(params);
         query.set('pageNumber', String(pageNumber));
         query.set('pageSize', String(pageSize));
-        return read(requests.get<Envelope<Product[]>>('products', query), envelope => unwrapPage(envelope, pageNumber, pageSize));
+        return read(requests.get<Envelope<Product[]>>('products', query, handleErrorInView),
+            envelope => unwrapPage(envelope, pageNumber, pageSize), !handleErrorInView);
     },
     details: (id: number): Promise<Product> => read(requests.get<Envelope<Product>>(`products/${id}`), unwrapOne),
-    fetchFilters: (): Promise<{ brands: string[], types: string[] }> =>
-        read(requests.get<Envelope<{ brands: string[], types: string[] }>>('products/filters'), unwrapOne)
+    find: (id: number): Promise<Product | null> => read(requests.get<Envelope<Product>>(`products/${id}`, undefined, true), unwrapNullable, false),
+    fetchFilters: (handleErrorInView = false): Promise<{ brands: string[], types: string[] }> =>
+        read(requests.get<Envelope<{ brands: string[], types: string[] }>>('products/filters', undefined, handleErrorInView), unwrapOne, !handleErrorInView)
 };
 
 const Admin = {

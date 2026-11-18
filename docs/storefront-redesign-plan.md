@@ -1,29 +1,34 @@
 # ReStore storefront redesign
 
-Status: planned. This phase improves the Persian, mobile-first storefront using the
-existing React, TypeScript and MUI 5 stack. The visual reference is Digikala's
-prominent search, category shortcuts and consistent product cards. ReStore uses
-its own colors, assets and layout density, sized for a small shop that can grow.
+Status: implemented in the React client. The MUI storefront uses the selected
+layout and deep green palette. The original rollout sequence is recorded in the
+[implementation prompts](storefront-redesign-prompts.md).
 
-## 1. Compare two directions, then choose one
+## 1. Selected design
 
-Timebox the design exploration to half a day. In Figma, sketch two directions
-with the same logo, Persian text and representative catalog data:
+Three browser prototypes were compared at mobile and desktop widths: compact,
+spacious and inspired by [Snapp Shop](https://snappshop.ir/). The third layout
+was selected, with the purple palette to be replaced. Use ReStore branding and
+catalog images.
 
-| Direction | Layout |
+| Area | Design decision |
 | --- | --- |
-| Compact storefront | Search first, short category strip, compact hero and visible products early. |
-| More spacious storefront | Search still prominent, larger feature banner, more room for category and product cards. |
+| Header | Make search prominent. Keep account and basket actions within reach. Place search on its own row on mobile. |
+| Home | Put four illustrated category shortcuts above a short banner. Follow with a compact section of selected products using real catalog data. |
+| Catalog | Use a consistent product grid with readable prices and a filter sidebar on desktop. Open the same filters in a drawer on mobile. |
+| Product | Group price and availability close to the purchase action. Give the product image and name room to breathe. |
 
-Sketch the header and first screen of home and catalog at mobile (about 390 px)
-and desktop (about 1440 px). Include a long product name, a real price in tomans,
-and the filter entry point. Start from the compact direction; prefer the other
-only if search and category discovery stay as clear. Pick one direction based on
-how easily a shopper can find search, browse a category and see products on mobile.
-Sketch the product detail layout only for the chosen direction. If a Figma file
-would slow this step down, compare the same rough layouts on paper or in a quick
-browser prototype. Build the chosen direction in MUI with real data next; skip
-designing every screen and state in Figma before touching code.
+The light theme uses deep green (`#224938`) for brand and primary actions,
+off-white (`#F8F8F5`) for the page, and white (`#FFFFFF`) for cards. The dark
+theme uses lighter green for the primary action. The client bundles the licensed
+Vazirmatn variable font. Reserve a muted red accent for discount labels when
+discount data is available.
+
+The prototype's original prices and discount percentages were illustrative. The
+current product API supplies one price in rials. Show that amount in tomans via
+the existing formatter. Use a neutral label such as **محصولات منتخب** on home.
+Show previous price, percentage off and sale labels once an agreed API contract
+provides real discount data.
 
 ## 2. Build the common storefront UI
 
@@ -48,7 +53,7 @@ designing every screen and state in Figma before touching code.
 | 1 | Header and one product card | Persian search, brand, account and basket count. Wire search to the existing catalog and keep the current account and basket flow. Verify one real product card at mobile and desktop widths before expanding. |
 | 2 | Catalog | Two columns on typical phones and more as room permits; allow a single column on narrow layouts if required. Use an inline sidebar on desktop and an accessible filter drawer on mobile. Reuse current brand/type filters, sort, pagination and API query adapter. Cover loading, empty, error and retry states. Reset to the first page when search or filters change. |
 | 3 | Product detail | Real image, name, description, toman price, availability and purchase action. Preserve the existing product URL and cart behavior. Cover missing images, long names and out of stock products. |
-| 4 | Home | Replace the demo welcome and rotating hero with one banner, category shortcuts and one product section. Use the existing type filters for shortcuts and real catalog data for the product section. Keep the path from home to a category or product short. |
+| 4 | Home | Replace the demo welcome and rotating hero with illustrated category shortcuts, one compact banner and a selected products section, in that order. Use the existing type filters and real catalog data. |
 
 The [catalog API](api-contracts.md) exposes types and brands; use these before
 considering a dedicated category model. Leave discounts, ratings, multi-image
@@ -56,6 +61,10 @@ galleries and marketplace features for phases that include the required data.
 Keep the current API contracts, existing URLs, deployment model and shopping
 flows. Basket, checkout, account and admin get compatibility checks for shared
 styles, with screen redesigns left for later.
+
+The catalog address carries search (`q`), repeated `type` and `brand` filters,
+`sort` and `page`. The client translates these fields through the API query
+adapter. The storefront and inventory each manage their own list state.
 
 ## 4. Verify the release candidate
 
@@ -70,6 +79,14 @@ styles, with screen redesigns left for later.
   Compare mobile load behavior against the current storefront on the same profile,
   especially image requests and layout shifts. Reserve image space, and lazy-load
   product images below the first screen.
+
+The implementation passed the client type check, 27 tests and the isolated
+production build. Chrome checks at 390 px and 1440 px used the local API with
+18 seeded products. They covered category navigation, search, sorting, paging,
+the filter drawer and keyboard focus, product details, the guest basket, admin
+navigation and checkout through order review. A separate HTTP integration test
+passed with simulated ZarinPal responses. Live gateway and comparative mobile
+performance measurements remain release checks.
 
 ## Later phase: SEO and Next.js
 

@@ -7,7 +7,8 @@ Infrastructure / Api layout, with MediatR CQRS and Mapster.
 [Demo](https://restore.navidasadipur.ir) · [Architecture](docs/architecture.md) ·
 [API contracts](docs/api-contracts.md) · [Migration plan and results](docs/cqrs-port-plan.md)
 
-[Storefront redesign plan](docs/storefront-redesign-plan.md)
+[Storefront redesign plan](docs/storefront-redesign-plan.md) ·
+[Implementation prompts](docs/storefront-redesign-prompts.md)
 
 The demo link is an existing deployment; this refactor has not been verified or
 deployed there. The initializer seeds `admin` and `alice` with password `Pa$$w0rd`

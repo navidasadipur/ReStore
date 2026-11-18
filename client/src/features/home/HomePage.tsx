@@ -1,54 +1,27 @@
-import { Box, Typography } from "@mui/material";
-import { Link } from "react-router-dom";
-import Slider from "react-slick";
+import agent from '../../app/api/agent';
+import { buildCatalogParams } from '../../app/api/catalogParams';
+import useStorefrontQuery from '../../app/hooks/useStorefrontQuery';
+import { catalogHref } from '../catalog/catalogLocation';
+import { categoryDisplay } from '../catalog/categoryLabels';
+import useProductListActions from '../catalog/useProductListActions';
+import HomeView from './HomeView';
+
+const fetchFeatured = () => agent.Catalog.list(buildCatalogParams({
+  pageNumber: 1, pageSize: 6, orderBy: 'name', types: [], brands: [],
+}), true);
+const fetchCategories = () => agent.Catalog.fetchFilters(true);
 
 export default function HomePage() {
-    const settings = {
-        dots: true,
-        infinite: true,
-        speed: 500,
-        slidesToShow: 1,
-        slidesToScroll: 1
-    };
+  const categories = useStorefrontQuery(fetchCategories);
+  const products = useStorefrontQuery(fetchFeatured);
+  const productActions = useProductListActions();
+  const types = categories.result.status === 'ready' ? categories.result.data.types : [];
+  const tiles = types.map(type => ({ ...categoryDisplay(type), href: catalogHref({ type }) }));
+  // Prefer the four categories with dedicated illustrations when the catalog grows.
+  tiles.sort((a, b) => Number(Boolean(b.image)) - Number(Boolean(a.image)));
 
-    return (
-        <>
-            <Slider {...settings} >
-                <div>
-                    <img src="/images/hero1.jpg" alt="hero" style={{ display: 'block', width: '100%', maxHeight: 500 }} />
-                </div>
-                <div>
-                    <img src="/images/hero2.jpg" alt="hero" style={{ display: 'block', width: '100%', maxHeight: 500 }} />
-                </div>
-                <div>
-                    <img src="/images/hero3.jpg" alt="hero" style={{ display: 'block', width: '100%', maxHeight: 500 }} />
-                </div>
-            </Slider>
-
-            <Box display='flex' justifyContent='center' sx={{ p: 4 }}>
-                <Typography variant='h3'>
-                    Welcome to the my shop!
-                </Typography>
-            </Box>
-            <Box display='flex' justifyContent='center' sx={{ p: 4 }}>
-                <Typography variant='h4' display='flex' justifyContent='center' textAlign='center' flexDirection='column' flexWrap="wrap">
-                    <p>see all codes of this shop in my GitHub repository:</p>
-                    <Link to='https://github.com/navidasadipur/ReStore' >
-                        https://github.com/navidasadipur/ReStore
-                    </Link>
-                </Typography>
-            </Box>
-            <Box display='flex' justifyContent='center' sx={{ p: 4 }}>
-                <Typography variant='h5' display='flex' justifyContent='center' textAlign='center' flexDirection='column' flexWrap="wrap">
-                    <p>my other project that is coming soon: </p>
-                    <Link to='https://reactivites.navidasadipur.ir/'  >
-                        reactivites.navidasadipur.ir
-                    </Link>
-                    <Link to='https://github.com/navidasadipur/Reactivites' >
-                        https://github.com/navidasadipur/Reactivites
-                    </Link>
-                </Typography>
-            </Box>
-        </>
-    )
+  return <HomeView categories={tiles.slice(0, 4)} categoryStatus={categories.result.status}
+    products={{ ...productActions, products: products.result.status === 'ready' ? products.result.data.items : [], loading: products.result.status === 'loading' }}
+    productsFailed={products.result.status === 'error'} catalogHref={catalogHref()}
+    onRetryCategories={categories.retry} onRetryProducts={products.retry} />;
 }

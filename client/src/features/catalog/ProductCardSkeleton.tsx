@@ -1,34 +1,14 @@
-import { Card, CardActions, CardContent, CardHeader, Grid, Skeleton } from "@mui/material";
+import { Card, Skeleton, Stack } from '@mui/material';
 
-export default function ProductCardSkeleton(){
-    return (
-        <Grid item xs component={Card}>
-            <CardHeader
-                avatar={
-                    <Skeleton animation="wave" variant="circular" width={40} height={40} />
-                }
-                title={
-                    <Skeleton
-                        animation="wave"
-                        height={10}
-                        width="80%"
-                        style={{ marginBottom: 6 }}
-                        />
-                }
-            />
-            <Skeleton sx={{height: 190}} animation="wave" variant="rectangular" />
-            <CardContent>
-                <>
-                    <Skeleton animation="wave" height={10} style={{ marginBottom: 6 }} />
-                    <Skeleton animation="wave" height={10} width="80%" />
-                </>
-            </CardContent>
-            <CardActions>
-                <>
-                    <Skeleton animation="wave" height={10} width="40%" />
-                    <Skeleton animation="wave" height={10} width="20%" />
-                </>
-            </CardActions>
-        </Grid>
-    )
+export default function ProductCardSkeleton() {
+  return (
+    <Card variant="outlined" aria-hidden sx={{ p: { xs: 1, sm: 1.5 } }}>
+      <Stack spacing={1}>
+        <Skeleton variant="rounded" sx={{ aspectRatio: '4 / 3', height: 'auto' }} />
+        <Skeleton variant="text" height={22} />
+        <Skeleton variant="text" width="72%" height={22} />
+        <Skeleton variant="rounded" height={40} />
+      </Stack>
+    </Card>
+  );
 }
