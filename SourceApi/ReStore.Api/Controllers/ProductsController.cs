@@ -48,7 +48,9 @@ namespace ReStore.Api.Controllers
         public async Task<PaginatedResponseListDto<ProductListDto>> GetProducts(
             [FromQuery] ProductListQuery query,
             CancellationToken cancellationToken)
-            => await _mediator.Send(query, cancellationToken);
+        {
+            return await _mediator.Send(query, cancellationToken);
+        }
 
         [HttpGet("{id:int}", Name = "GetProduct")]
         public async Task<DtoReturnOne<ProductDetailDto>> GetProduct(

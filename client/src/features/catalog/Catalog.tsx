@@ -1,81 +1,52 @@
-import { Alert, Button, Grid, Paper } from "@mui/material";
-import CheckboxButtons from "../../app/components/CheckboxButtons";
-import RadioButtonGroup from "../../app/components/RadioButtonGroup";
-import LoadingComponent from "../../app/layout/LoadingComponent";
-import { useAppDispatch, useAppSelector } from "../../app/store/configureStore";
-import {
-  setPageNumber,
-  setProductParams,
-} from "./catalogSlice";
-import ProductList from "./ProductList";
-import ProductSearch from "./ProductSearch";
-import AppPagination from "../../app/components/AppPagination";
-import useProducts from "../../app/hooks/useProducts";
+import { useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import agent from '../../app/api/agent';
+import { buildCatalogParams } from '../../app/api/catalogParams';
+import useStorefrontQuery from '../../app/hooks/useStorefrontQuery';
+import { readCatalogLocation } from './catalogLocation';
+import CatalogView from './CatalogView';
+import useProductListActions from './useProductListActions';
 
-const sortOptions = [
-  { value: "name", label: "Alphabetical" },
-  { value: "priceDesc", label: "Price - High to low" },
-  { value: "price", label: "Price - Low to high" },
-];
+const fetchFilters = () => agent.Catalog.fetchFilters(true);
 
 export default function Catalog() {
-  const {products, brands, types, filtersLoaded, metaData, error, retry} = useProducts();
-  const { productParams } = useAppSelector((state) => state.catalog);
-  const dispatch = useAppDispatch();
+  const [search, setSearch] = useSearchParams();
+  const params = readCatalogLocation(search);
+  const apiQuery = buildCatalogParams(params).toString();
+  const fetchProducts = useCallback(() => agent.Catalog.list(new URLSearchParams(apiQuery), true), [apiQuery]);
+  const products = useStorefrontQuery(fetchProducts);
+  const filters = useStorefrontQuery(fetchFilters);
+  const productActions = useProductListActions();
+  const page = products.result.status === 'ready' ? products.result.data : undefined;
+  const options = filters.result.status === 'ready' ? filters.result.data : undefined;
 
-  if (error) return <Alert severity="error" action={<Button onClick={retry}>Retry</Button>}>{error}</Alert>;
-  if (!filtersLoaded) return <LoadingComponent message={"Loading Products ..."} />;
+  function updateFilters(update: (next: URLSearchParams) => void) {
+    const next = new URLSearchParams(search);
+    update(next);
+    next.delete('page');
+    setSearch(next, { preventScrollReset: true });
+  }
 
-  return (
-    <Grid container columnSpacing={4}>
-      <Grid item xs={3}>
-        <Paper sx={{ mb: 2 }}>
-          <ProductSearch />
-        </Paper>
-        <Paper sx={{ mb: 2, p: 2 }}>
-          <RadioButtonGroup
-            selectedValue={productParams.orderBy}
-            options={sortOptions}
-            onChange={(e) =>
-              dispatch(setProductParams({ orderBy: e.target.value }))
-            }
-          />
-        </Paper>
+  function setFilter(key: string, values: string[]) {
+    updateFilters(next => {
+      next.delete(key);
+      values.forEach(value => next.append(key, value));
+    });
+  }
 
-        <Paper sx={{ mb: 2, p: 2 }}>
-          <CheckboxButtons
-            items={brands}
-            checked={productParams.brands}
-            onChange={(items: string[]) =>
-              dispatch(setProductParams({ brands: items }))
-            }
-          />
-        </Paper>
+  function setPage(value: number) {
+    const next = new URLSearchParams(search);
+    if (value > 1) next.set('page', String(value));
+    else next.delete('page');
+    setSearch(next);
+  }
 
-        <Paper sx={{ mb: 2, p: 2 }}>
-          <CheckboxButtons
-            items={types}
-            checked={productParams.types}
-            onChange={(items: string[]) =>
-              dispatch(setProductParams({ types: items }))
-            }
-          />
-        </Paper>
-      </Grid>
-      <Grid item xs={9}>
-        <ProductList products={products} />
-      </Grid>
-      <Grid item xs={3} />
-      <Grid item xs={9} sx={{ mb: 2 }}>
-        {metaData && (
-          <AppPagination
-            metaData={metaData}
-            onPageChange={(page: number) =>
-              dispatch(setPageNumber({ pageNumber: page }))
-            }
-          />
-        )}
-      </Grid>
-    </Grid>
-  );
+  return <CatalogView query={params.searchTerm ?? ''} sort={params.orderBy}
+    brands={options?.brands ?? []} types={options?.types ?? []} selectedBrands={params.brands} selectedTypes={params.types}
+    products={{ ...productActions, products: page?.items ?? [], loading: products.result.status === 'loading' }}
+    metaData={page?.metaData} productError={products.result.status === 'error'} filterStatus={filters.result.status}
+    onRetryProducts={products.retry} onRetryFilters={filters.retry} onPage={setPage}
+    onSort={value => updateFilters(next => next.set('sort', value))}
+    onBrands={values => setFilter('brand', values)} onTypes={values => setFilter('type', values)}
+    onClear={() => updateFilters(next => { next.delete('brand'); next.delete('type'); })} />;
 }
