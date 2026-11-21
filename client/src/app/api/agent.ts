@@ -71,7 +71,7 @@ const requests = {
         const options: RequestOptions = handleErrorInView ? { params, handleErrorInView } : { params };
         return axios.get<T>(url, options).then(responseBody);
     },
-    post: <T>(url: string, body: {}) => axios.post<T>(url, body).then(responseBody),
+    post: <T>(url: string, body: {}, options?: RequestOptions) => axios.post<T>(url, body, options).then(responseBody),
     put: <T>(url: string, body: {}) => axios.put<T>(url, body).then(responseBody),
     delete: <T>(url: string) => axios.delete<T>(url).then(responseBody),
     postForm: <T>(url: string, data: FormData) => axios.post<T>(url, data).then(responseBody),
@@ -168,6 +168,11 @@ const Payments = {
         unwrapOne, false)
 };
 
+const AiAssistant = {
+    chat: (message: string, signal: AbortSignal) =>
+        requests.post<{ message: string }>('aiAssistant/chat', { message }, { signal, handleErrorInView: true })
+};
+
 const TestErrors = {
     get400Error: () => requests.get('buggy/bad-request'),
     get401Error: () => requests.get('buggy/unauthorized'),
@@ -176,5 +181,5 @@ const TestErrors = {
     getValidationError: () => requests.get('buggy/validation-error')
 };
 
-const agent = { Catalog, Admin, Basket, Account, Orders, Payments, TestErrors };
+const agent = { Catalog, Admin, Basket, Account, Orders, Payments, AiAssistant, TestErrors };
 export default agent;
