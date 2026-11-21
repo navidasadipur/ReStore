@@ -11,6 +11,7 @@ import { useAppDispatch } from "../store/configureStore";
 import { fetchBasketAsync } from "../../features/basket/basketSlice";
 import { fetchCurrentUser } from "../../features/account/accountSlice";
 import { createStorefrontTheme, rtlCache } from './storefrontTheme';
+import AiAssistantChat from '../../features/aiAssistant/AiAssistantChat';
 
 function App() {
   const dispatch = useAppDispatch();
@@ -46,6 +47,7 @@ function App() {
         <Container component="main" maxWidth="lg" sx={{ pt: { xs: 2, sm: 3 }, pb: 5 }}>
           {loading ? <LoadingComponent message="در حال آماده‌سازی فروشگاه…" /> : <Outlet />}
         </Container>
+        {!loading && <AiAssistantChat />}
       </ThemeProvider>
     </CacheProvider>
   );

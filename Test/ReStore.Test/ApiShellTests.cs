@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -76,6 +77,18 @@ public sealed class ApiShellHost : IAsyncLifetime
 
 public class ApiShellTests(ApiShellHost host) : IClassFixture<ApiShellHost>
 {
+    [Theory]
+    [InlineData("/aiAssistant/chat")]
+    [InlineData("/api/aiAssistant/chat")]
+    public async Task Assistant_echoes_the_submitted_message(string path)
+    {
+        const string message = "  سلام ReStore!\nپیام دوم  ";
+        using var response = await host.Client.PostAsJsonAsync(path, new { message });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reply = await response.Content.ReadFromJsonAsync<AiAssistantMessage>();
+        reply!.Message.Should().Be(message);
+    }
+
     [Theory]
     [InlineData("GET", "/api/products?pageNumber=invalid", null)]
     [InlineData("POST", "/api/basket?productId=1&quantity=invalid", "{}")]
