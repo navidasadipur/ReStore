@@ -64,7 +64,7 @@ public sealed class ProductMcpTools(IMediator mediator)
         CancellationToken cancellationToken = default)
         => await mediator.Send(new ProductFiltersQuery(), cancellationToken);
 
-    [McpServerTool(ReadOnly = false, Destructive = false, Idempotent = false, UseStructuredContent = true)]
+    //[McpServerTool(ReadOnly = false, Destructive = false, Idempotent = false, UseStructuredContent = true)]
     [Description("یک محصول جدید بدون تصویر ایجاد می‌کند. برای تصویر باید از API مدیریت محصول استفاده شود.")]
     public async Task<InsertReturn> CreateProduct(
         [Description("نام محصول.")] string name,
@@ -86,7 +86,7 @@ public sealed class ProductMcpTools(IMediator mediator)
             },
             cancellationToken);
 
-    [McpServerTool(ReadOnly = false, Destructive = false, Idempotent = false, UseStructuredContent = true)]
+    //[McpServerTool(ReadOnly = false, Destructive = false, Idempotent = false, UseStructuredContent = true)]
     [Description("اطلاعات یک محصول را ویرایش می‌کند و تصویر فعلی آن را حفظ می‌کند.")]
     public async Task<UpdateReturn> UpdateProduct(
         [Description("شناسه محصول.")] int id,
@@ -119,7 +119,7 @@ public sealed class ProductMcpTools(IMediator mediator)
             },
             cancellationToken);
 
-    [McpServerTool(ReadOnly = false, Destructive = true, Idempotent = false, UseStructuredContent = true)]
+    //[McpServerTool(ReadOnly = false, Destructive = true, Idempotent = false, UseStructuredContent = true)]
     [Description("یک محصول را حذف می‌کند. اگر محصول تصویر Cloudinary داشته باشد، آن تصویر نیز حذف می‌شود.")]
     public async Task<DeleteReturn> DeleteProduct(
         [Description("شناسه محصول.")] int id,
