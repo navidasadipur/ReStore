@@ -103,10 +103,7 @@ export default function AiAssistantChatView({
           insetInlineEnd: 'max(20px, env(safe-area-inset-left))',
           bottom: 'max(16px, env(safe-area-inset-bottom))',
           zIndex: 'fab',
-          bgcolor: '#0C3971',
-          color: 'common.white',
-          boxShadow: 6,
-          '&:hover': { bgcolor: '#092E5C' }
+          boxShadow: 6
         }}
       >
         <SmsOutlined />

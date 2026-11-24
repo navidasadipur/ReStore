@@ -14,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using ReStore.Api.Controllers;
+using ReStore.Api.Services;
 using ReStore.Api.Extensions;
 using ReStore.Application.Commands;
 using ReStore.Application.Common;
@@ -46,6 +47,12 @@ public sealed class ApiShellHost : IAsyncLifetime
         });
         builder.Services.AddDbContext<StoreContext>(options => options.UseSqlite("DataSource=:memory:"));
         builder.Services.AddApiServices(builder.Configuration);
+        var chat = new Mock<IMcpChatClient>();
+        chat.Setup(client => client.ChatAsync(new AiAssistantMessage("سلام"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new McpChatReply("پاسخ دستیار"));
+        chat.Setup(client => client.ChatAsync(new AiAssistantMessage("offline"), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException());
+        builder.Services.AddSingleton(chat.Object);
 
         // These tests exercise the HTTP shell with a controlled application failure;
         // the actual CQRS handlers and repositories are covered by the slice tests.
@@ -80,13 +87,20 @@ public class ApiShellTests(ApiShellHost host) : IClassFixture<ApiShellHost>
     [Theory]
     [InlineData("/aiAssistant/chat")]
     [InlineData("/api/aiAssistant/chat")]
-    public async Task Assistant_echoes_the_submitted_message(string path)
+    public async Task Assistant_returns_the_MCP_answer(string path)
     {
-        const string message = "  سلام ReStore!\nپیام دوم  ";
+        const string message = "سلام";
         using var response = await host.Client.PostAsJsonAsync(path, new { message });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var reply = await response.Content.ReadFromJsonAsync<AiAssistantMessage>();
-        reply!.Message.Should().Be(message);
+        reply!.Message.Should().Be("پاسخ دستیار");
+    }
+
+    [Fact]
+    public async Task Assistant_reports_an_unreachable_MCP_client()
+    {
+        using var response = await host.Client.PostAsJsonAsync("/api/aiAssistant/chat", new { message = "offline" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
     }
 
     [Theory]

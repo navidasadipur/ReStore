@@ -8,6 +8,7 @@ using ReStore.Api.DTOs;
 using ReStore.Api.Filters;
 using ReStore.Api.Mcp;
 using ReStore.Api.Services;
+using Refit;
 using ReStore.Application.Interfaces;
 using ReStore.Infrastructure.Persistence;
 
@@ -17,6 +18,11 @@ public static class ApiServiceRegistration
 {
     public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddRefitClient<IMcpChatClient>().ConfigureHttpClient(client =>
+        {
+            client.BaseAddress = new Uri(configuration["McpClient:BaseUrl"]!);
+            client.Timeout = TimeSpan.FromSeconds(configuration.GetValue("McpClient:TimeoutSeconds", 120));
+        });
         services.AddControllers().ConfigureApiBehaviorOptions(options =>
         {
             var defaultResponseFactory = options.InvalidModelStateResponseFactory;
